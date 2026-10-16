@@ -24,31 +24,20 @@ import QuestionBankViewer from './components/QuestionBankViewer';
 import { exportTestPaperToWord } from './utils/exportToWord';
 
 export default function App() {
-  // Central Question Bank in localStorage with smart merge
-  const [questionBank, setQuestionBank] = useState(() => {
+  // Central Question Bank in memory initialized cleanly from master bank
+  const [questionBank, setQuestionBank] = useState(INITIAL_QUESTION_BANK);
+
+  // Clear any residual browser storage on startup
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem('tca_question_bank');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const map = new Map();
-        INITIAL_QUESTION_BANK.forEach(q => map.set(q.id, q));
-        parsed.forEach(q => map.set(q.id, q));
-        return Array.from(map.values());
-      }
-    } catch (e) {
-      console.error('Error loading question bank:', e);
-    }
-    return INITIAL_QUESTION_BANK;
-  });
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (e) {}
+  }, []);
 
   // DB Sync Status
   const [dbStatus, setDbStatus] = useState('checking'); // 'connected' | 'cached' | 'syncing'
   const [dbMessage, setDbMessage] = useState('');
-
-  // Save to LocalStorage
-  useEffect(() => {
-    localStorage.setItem('tca_question_bank', JSON.stringify(questionBank));
-  }, [questionBank]);
 
   // Attempt to fetch from MySQL on mount
   useEffect(() => {
@@ -138,12 +127,15 @@ export default function App() {
     }
   };
 
-  // Restore Master Bank
+  // Restore Master Bank & Clear Browser Cache
   const handleResetToMasterBank = () => {
     if (window.confirm("Restore complete master question bank for 9th Mathematics (all units)? Custom edits will be reset.")) {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (e) {}
       setQuestionBank(INITIAL_QUESTION_BANK);
-      localStorage.setItem('tca_question_bank', JSON.stringify(INITIAL_QUESTION_BANK));
-      alert("Master Question Bank successfully restored with all 13 units!");
+      alert("All local data wiped and Master Question Bank successfully restored with all 13 units!");
     }
   };
 
