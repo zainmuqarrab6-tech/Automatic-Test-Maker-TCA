@@ -54,18 +54,27 @@ export default function App() {
   useEffect(() => {
     async function loadDatabase() {
       try {
+        let res = null;
         // 1. First try Hostinger Node.js Web App endpoint /api/questions
-        let res = await fetch('/api/questions', { cache: 'no-store' });
-        if (!res.ok) {
-          // 2. Fallback to PHP API if running on Apache/LiteSpeed
-          res = await fetch('/api.php?action=get_questions', { cache: 'no-store' });
-        }
-        if (!res.ok) {
-          // 3. Fallback to local dev port 5000 if running
-          res = await fetch('http://localhost:5000/api/questions');
+        try {
+          res = await fetch('/api/questions', { cache: 'no-store' });
+        } catch (e) {}
+
+        // 2. Fallback to PHP API if running on Apache/LiteSpeed
+        if (!res || !res.ok) {
+          try {
+            res = await fetch('/api.php?action=get_questions', { cache: 'no-store' });
+          } catch (e) {}
         }
 
-        if (res.ok) {
+        // 3. Fallback to local dev port 5000 if running
+        if (!res || !res.ok) {
+          try {
+            res = await fetch('http://localhost:5000/api/questions');
+          } catch (e) {}
+        }
+
+        if (res && res.ok) {
           const result = await res.json();
           const serverQuestions = result.data || result;
           if (Array.isArray(serverQuestions) && serverQuestions.length > 0) {
@@ -94,23 +103,28 @@ export default function App() {
     setDbStatus('syncing');
     setDbMessage('Syncing to MySQL...');
     try {
+      let res = null;
       // 1. Try Hostinger Node.js Web App endpoint /api/bulk_insert
-      let res = await fetch('/api/bulk_insert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(questionBank)
-      });
-
-      if (!res.ok) {
-        // 2. Try PHP API endpoint
-        res = await fetch('/api.php?action=bulk_insert', {
+      try {
+        res = await fetch('/api/bulk_insert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(questionBank)
         });
+      } catch (e) {}
+
+      // 2. Try PHP API endpoint
+      if (!res || !res.ok) {
+        try {
+          res = await fetch('/api.php?action=bulk_insert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(questionBank)
+          });
+        } catch (e) {}
       }
 
-      if (res.ok) {
+      if (res && res.ok) {
         setDbStatus('connected');
         setDbMessage(`MySQL Live (${questionBank.length} Questions)`);
         alert(`✅ Successfully synced ${questionBank.length} questions to Hostinger MySQL Database!`);
@@ -120,7 +134,7 @@ export default function App() {
     } catch (e) {
       setDbStatus('cached');
       setDbMessage(`Cached Mode (${questionBank.length} Questions)`);
-      alert("Note: Server sync completed locally in cached memory. When deployed on Hostinger Web App, it connects directly to MySQL.");
+      alert("Note: Server sync completed locally in cached memory. When deployed on Hostinger, it connects directly to MySQL.");
     }
   };
 
