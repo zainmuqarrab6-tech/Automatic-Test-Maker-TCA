@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
 import path from 'path';
+import fs from 'fs';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { INITIAL_QUESTION_BANK } from './src/data/questionBank.js';
 
@@ -18,8 +20,20 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Ensure production dist exists before serving
+const distPath = path.join(__dirname, 'dist');
+if (!fs.existsSync(distPath) || !fs.existsSync(path.join(distPath, 'index.html'))) {
+  try {
+    console.log('[Server] Production dist not found. Triggering automated build: npm run build...');
+    execSync('npm run build', { stdio: 'inherit' });
+    console.log('[Server] ✅ Automated build completed successfully!');
+  } catch (err) {
+    console.warn('[Server] Automated build notice:', err.message);
+  }
+}
+
 // Serve static assets from Vite production build
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(express.static(distPath));
 
 // MySQL Pool Configuration for Hostinger Web App
 const dbConfig = {
