@@ -1,9 +1,13 @@
+DirectoryIndex index.php index.html
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
-  RewriteRule ^index\.html$ - [L]
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^(index\.html|index\.php)$ - [L]
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
   RewriteCond %{DOCUMENT_ROOT}/index.html -f
   RewriteRule . index.html [L]
+  RewriteRule . index.php [L]
 </IfModule>
