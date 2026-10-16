@@ -41,7 +41,7 @@ export function exportTestPaperToWord(paperData, options = {}) {
   } else {
     longMarks = longQuestions.reduce((sum, q) => sum + (q.marks || 4), 0);
   }
-  const totalMarks = paperData.targetMarks || paperData.totalMarks || (mcqMarks + shortMarks + longMarks);
+  const totalMarks = (mcqMarks + shortMarks + longMarks);
 
   // Clean LaTeX notation for simple Word viewing
   const cleanLatex = (text) => {
