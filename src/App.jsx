@@ -397,9 +397,15 @@ export default function App() {
     setPaperData({ ...paperData, [field]: value });
   };
 
-  // Bulk Ingestion callback from UniversalUploader
+  // Bulk Ingestion callback from UniversalUploader (Deduplicated by ID)
   const handleIngestQuestions = (newQuestions) => {
-    setQuestionBank(prev => [...newQuestions, ...prev]);
+    setQuestionBank(prev => {
+      const map = new Map();
+      prev.forEach(q => map.set(q.id, q));
+      newQuestions.forEach(q => map.set(q.id, q));
+      return Array.from(map.values());
+    });
+
     // Auto-sync new questions to MySQL (Node.js Web App first, then PHP fallback)
     try {
       fetch('/api/bulk_insert', {
@@ -416,9 +422,9 @@ export default function App() {
     } catch (e) {}
   };
 
-  // Add question callback from QuestionBankViewer
+  // Add question callback from QuestionBankViewer (Deduplicated by ID)
   const handleAddQuestion = (newQuestion) => {
-    setQuestionBank(prev => [newQuestion, ...prev]);
+    setQuestionBank(prev => [newQuestion, ...prev.filter(q => q.id !== newQuestion.id)]);
     // Save to MySQL (Node.js Web App first, then PHP fallback)
     try {
       fetch('/api/questions', {
