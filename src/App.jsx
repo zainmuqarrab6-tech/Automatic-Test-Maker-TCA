@@ -441,6 +441,50 @@ export default function App() {
     } catch (e) {}
   };
 
+  // Edit existing question in Question Bank
+  const handleEditBankQuestion = (updatedQuestion) => {
+    setQuestionBank(prev => prev.map(q => q.id === updatedQuestion.id ? updatedQuestion : q));
+    // If current paper has this question, update it live as well
+    if (paperData) {
+      setPaperData(prev => {
+        if (!prev) return prev;
+        const updateQuestionsInList = (list) => (list || []).map(q => q.id === updatedQuestion.id ? { ...q, ...updatedQuestion } : q);
+        return {
+          ...prev,
+          sections: (prev.sections || []).map(sec => ({
+            ...sec,
+            questions: updateQuestionsInList(sec.questions)
+          })),
+          customSections: (prev.customSections || []).map(sec => ({
+            ...sec,
+            questions: updateQuestionsInList(sec.questions)
+          }))
+        };
+      });
+    }
+    // Sync update to server
+    try {
+      fetch('/api/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedQuestion)
+      }).catch(() => {
+        fetch('/api.php?action=add_question', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedQuestion)
+        });
+      });
+    } catch (e) {}
+  };
+
+  // Delete question from central Question Bank
+  const handleDeleteBankQuestion = (questionId) => {
+    if (window.confirm('Are you sure you want to delete this question from the bank?')) {
+      setQuestionBank(prev => prev.filter(q => q.id !== questionId));
+    }
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -648,6 +692,8 @@ export default function App() {
           <QuestionBankViewer
             questionBank={questionBank}
             onAddQuestion={handleAddQuestion}
+            onEditQuestion={handleEditBankQuestion}
+            onDeleteQuestion={handleDeleteBankQuestion}
             onResetToMasterBank={handleResetToMasterBank}
           />
         )}
