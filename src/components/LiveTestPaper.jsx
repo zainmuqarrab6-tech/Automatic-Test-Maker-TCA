@@ -114,11 +114,26 @@ export default function LiveTestPaper({
 
   // Exact Board Style Marks Calculation
   const mcqMarks = mcqs.length * 1;
-  const shortAttemptCount = shortQuestions.length > 3 ? shortQuestions.length - 2 : shortQuestions.length;
-  const shortMarks = shortAttemptCount * 2;
-  const longMarks = longQuestions.reduce((sum, q) => sum + (q.marks || 4), 0);
-  const accurateTotalMarks = mcqMarks + shortMarks + longMarks;
+  let shortAttemptCount = shortQuestions.length;
+  if (shortQuestions.length >= 8) shortAttemptCount = shortQuestions.length - 2;
+  else if (shortQuestions.length === 7) shortAttemptCount = 6;
+  else if (shortQuestions.length === 5) shortAttemptCount = 4;
+  else if (shortQuestions.length > 3) shortAttemptCount = shortQuestions.length - 1;
 
+  const shortMarks = shortAttemptCount * 2;
+
+  let longMarks = 0;
+  if (paperData.targetMarks === 25 && longQuestions.length >= 2) {
+    longMarks = 8;
+  } else if (paperData.targetMarks === 50 && longQuestions.length >= 4) {
+    longMarks = 16;
+  } else if (paperData.targetMarks === 75 && longQuestions.length >= 6) {
+    longMarks = 24;
+  } else {
+    longMarks = longQuestions.reduce((sum, q) => sum + (q.marks || 4), 0);
+  }
+
+  const accurateTotalMarks = paperData.totalMarks || paperData.targetMarks || (mcqMarks + shortMarks + longMarks);
   const totalObtainedMarksString = `[      / ${accurateTotalMarks} ]`;
 
   const handleSaveEdit = (e) => {
@@ -420,7 +435,13 @@ export default function LiveTestPaper({
               <span className="section-title-ur">سوال نمبر 3: تفصیلی سوالات و مسئلے ({longMarks} نمبر)</span>
             </div>
             <div className="section-instructions">
-              Note: Attempt all parts with step-by-step working, diagrams and geometrical proofs.
+              {paperData.targetMarks === 25 && longQuestions.length >= 2 
+                ? "Note: Attempt any ONE Question (or both parts a & b, 4 marks each). Overwriting is not allowed." 
+                : paperData.targetMarks === 50 && longQuestions.length >= 4
+                  ? "Note: Attempt any TWO Questions with complete working and diagrams."
+                  : paperData.targetMarks === 75 && longQuestions.length >= 6
+                    ? "Note: Attempt any THREE Questions including Compulsory Theorem."
+                    : "Note: Attempt all parts with step-by-step working, diagrams and geometrical proofs."}
             </div>
 
             <div className="long-questions-wrapper">
