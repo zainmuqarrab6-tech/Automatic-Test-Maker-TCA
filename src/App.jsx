@@ -185,8 +185,15 @@ export default function App() {
            selectedChapters.includes(q.chapter_no)
     );
 
+    // If pool is empty for specific subject, fall back to any questions for that subject or class
     if (pool.length === 0) {
       pool = questionBank.filter(q => q.class === cls && q.subject === subj);
+    }
+    if (pool.length === 0) {
+      pool = questionBank.filter(q => q.class === cls);
+    }
+    if (pool.length === 0) {
+      pool = questionBank;
     }
 
     const availableMcqs = pool.filter(q => q.type === 'mcq');
@@ -195,15 +202,50 @@ export default function App() {
 
     const shuffle = (array) => [...array].sort(() => Math.random() - 0.5);
 
-    const chosenMcqs = shuffle(availableMcqs).slice(0, mcqCount);
-    const chosenShorts = shuffle(availableShorts).slice(0, shortCount);
-    const chosenLongs = shuffle(availableLongs).slice(0, longCount);
+    let chosenMcqs = shuffle(availableMcqs).slice(0, mcqCount);
+    let chosenShorts = shuffle(availableShorts).slice(0, shortCount);
+    let chosenLongs = shuffle(availableLongs).slice(0, longCount);
+
+    // Smart Replenishment: If selected single chapter has fewer questions than requested, supplement from wider pool
+    const subjectPool = questionBank.filter(q => q.class === cls && q.subject === subj);
+    const fallbackPool = subjectPool.length > 0 ? subjectPool : questionBank;
+
+    if (chosenMcqs.length < mcqCount) {
+      const extra = shuffle(fallbackPool.filter(q => q.type === 'mcq' && !chosenMcqs.some(c => c.id === q.id)));
+      chosenMcqs = [...chosenMcqs, ...extra.slice(0, mcqCount - chosenMcqs.length)];
+    }
+
+    if (chosenShorts.length < shortCount) {
+      const extra = shuffle(fallbackPool.filter(q => q.type === 'short_question' && !chosenShorts.some(c => c.id === q.id)));
+      chosenShorts = [...chosenShorts, ...extra.slice(0, shortCount - chosenShorts.length)];
+    }
+
+    if (chosenLongs.length < longCount) {
+      const extra = shuffle(fallbackPool.filter(q => q.type === 'long_question' && !chosenLongs.some(c => c.id === q.id)));
+      chosenLongs = [...chosenLongs, ...extra.slice(0, longCount - chosenLongs.length)];
+    }
 
     const mcqMarks = chosenMcqs.length * 1;
-    const shortAttempt = chosenShorts.length > 3 ? chosenShorts.length - 2 : chosenShorts.length;
+    let shortAttempt = chosenShorts.length;
+    if (chosenShorts.length >= 8) shortAttempt = chosenShorts.length - 2;
+    else if (chosenShorts.length === 7) shortAttempt = 6;
+    else if (chosenShorts.length === 5) shortAttempt = 4;
+    else if (chosenShorts.length > 3) shortAttempt = chosenShorts.length - 1;
+
     const shortMarks = shortAttempt * 2;
-    const longMarks = chosenLongs.reduce((sum, q) => sum + (q.marks || 4), 0);
-    const calculatedTotal = mcqMarks + shortMarks + longMarks;
+    
+    let longMarks = 0;
+    if (targetMarks === 25 && chosenLongs.length >= 2) {
+      longMarks = 8;
+    } else if (targetMarks === 50 && chosenLongs.length >= 4) {
+      longMarks = 16;
+    } else if (targetMarks === 75 && chosenLongs.length >= 6) {
+      longMarks = 24;
+    } else {
+      longMarks = chosenLongs.reduce((sum, q) => sum + (q.marks || 4), 0);
+    }
+
+    const calculatedTotal = targetMarks || (mcqMarks + shortMarks + longMarks);
 
     setPaperData({
       testTitle,
@@ -213,8 +255,8 @@ export default function App() {
       selectedChapters,
       date: new Date().toISOString().split('T')[0],
       timeAllowed,
-      targetMarks,
-      totalMarks: calculatedTotal > 0 ? calculatedTotal : targetMarks,
+      targetMarks: targetMarks || calculatedTotal,
+      totalMarks: calculatedTotal,
       mcqs: chosenMcqs,
       shortQuestions: chosenShorts,
       longQuestions: chosenLongs
@@ -238,7 +280,12 @@ export default function App() {
     const chosenLongs = selectedQuestions.filter(q => q.type === 'long_question');
 
     const mcqMarks = chosenMcqs.length * 1;
-    const shortAttempt = chosenShorts.length > 3 ? chosenShorts.length - 2 : chosenShorts.length;
+    let shortAttempt = chosenShorts.length;
+    if (chosenShorts.length >= 8) shortAttempt = chosenShorts.length - 2;
+    else if (chosenShorts.length === 7) shortAttempt = 6;
+    else if (chosenShorts.length === 5) shortAttempt = 4;
+    else if (chosenShorts.length > 3) shortAttempt = chosenShorts.length - 1;
+
     const shortMarks = shortAttempt * 2;
     const longMarks = chosenLongs.reduce((sum, q) => sum + (q.marks || 4), 0);
     const calculatedTotal = mcqMarks + shortMarks + longMarks;
