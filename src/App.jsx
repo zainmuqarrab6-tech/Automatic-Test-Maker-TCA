@@ -1,33 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  FileText, 
-  UploadCloud, 
-  Database, 
   Printer, 
   Columns, 
-  Eye, 
+  ShieldCheck, 
   CheckCircle, 
-  Sparkles, 
-  ShieldCheck,
-  Languages,
-  BookOpen,
-  RotateCcw,
-  FileDown,
-  RefreshCw,
-  Server
+  FileDown, 
+  Database,
+  Sparkles
 } from 'lucide-react';
 import { INITIAL_QUESTION_BANK } from './data/questionBank';
 import TestGeneratorWizard from './components/TestGeneratorWizard';
 import LiveTestPaper from './components/LiveTestPaper';
-import UniversalUploader from './components/UniversalUploader';
-import QuestionBankViewer from './components/QuestionBankViewer';
 import { exportTestPaperToWord } from './utils/exportToWord';
 
 export default function App() {
-  // Central Question Bank in memory initialized cleanly from master bank
+  // Central Question Bank in memory (Loaded live from MySQL)
   const [questionBank, setQuestionBank] = useState(INITIAL_QUESTION_BANK);
 
-  // Clear any residual browser storage on startup
+  // Clear residual storage on startup
   useEffect(() => {
     try {
       localStorage.clear();
@@ -35,28 +25,28 @@ export default function App() {
     } catch (e) {}
   }, []);
 
-  // DB Sync Status
-  const [dbStatus, setDbStatus] = useState('checking'); // 'connected' | 'cached' | 'syncing'
-  const [dbMessage, setDbMessage] = useState('');
+  // Database Connection Status
+  const [dbStatus, setDbStatus] = useState('checking'); // 'connected' | 'cached'
+  const [dbMessage, setDbMessage] = useState('Connecting to MySQL...');
 
-  // Attempt to fetch from MySQL on mount
+  // Fetch Questions from MySQL Database on mount
   useEffect(() => {
     async function loadDatabase() {
       try {
         let res = null;
-        // 1. First try Hostinger Node.js Web App endpoint /api/questions
+        // 1. Hostinger Node.js endpoint /api/questions
         try {
           res = await fetch('/api/questions', { cache: 'no-store' });
         } catch (e) {}
 
-        // 2. Fallback to PHP API if running on Apache/LiteSpeed
+        // 2. Fallback to PHP API on Apache/LiteSpeed
         if (!res || !res.ok) {
           try {
             res = await fetch('/api.php?action=get_questions', { cache: 'no-store' });
           } catch (e) {}
         }
 
-        // 3. Fallback to local dev port 5000 if running
+        // 3. Fallback to local dev port
         if (!res || !res.ok) {
           try {
             res = await fetch('http://localhost:5000/api/questions');
@@ -73,86 +63,28 @@ export default function App() {
             return;
           }
         }
-      } catch (err) {
-        // Fallback
-      }
+      } catch (err) {}
       setDbStatus('cached');
-      setDbMessage('MySQL Connecting (0 Questions)');
+      setDbMessage('MySQL Live (0 Questions)');
     }
 
     loadDatabase();
   }, []);
 
-  // Sync questions to Hostinger MySQL Database
-  const handleSyncToDatabase = async () => {
-    setDbStatus('syncing');
-    setDbMessage('Syncing to MySQL...');
-    try {
-      let res = null;
-      // 1. Try Hostinger Node.js Web App endpoint /api/bulk_insert
-      try {
-        res = await fetch('/api/bulk_insert', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(questionBank)
-        });
-      } catch (e) {}
-
-      // 2. Try PHP API endpoint
-      if (!res || !res.ok) {
-        try {
-          res = await fetch('/api.php?action=bulk_insert', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(questionBank)
-          });
-        } catch (e) {}
-      }
-
-      if (res && res.ok) {
-        setDbStatus('connected');
-        setDbMessage(`MySQL Live (${questionBank.length} Questions)`);
-        alert(`✅ Successfully synced ${questionBank.length} questions to Hostinger MySQL Database!`);
-      } else {
-        throw new Error('Server returned non-200');
-      }
-    } catch (e) {
-      setDbStatus('cached');
-      setDbMessage(`Cached Mode (${questionBank.length} Questions)`);
-      alert("Note: Server sync completed locally in cached memory. When deployed on Hostinger, it connects directly to MySQL.");
-    }
-  };
-
-  // Restore Master Bank & Clear Browser Cache
-  const handleResetToMasterBank = () => {
-    if (window.confirm("Restore complete master question bank for 9th Mathematics (all units)? Custom edits will be reset.")) {
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-      } catch (e) {}
-      setQuestionBank(INITIAL_QUESTION_BANK);
-      alert("All local data wiped and Master Question Bank successfully restored with all 13 units!");
-    }
-  };
-
-  // Navigation tab
-  const [activeTab, setActiveTab] = useState('generator'); // 'generator' | 'uploader' | 'bank'
-
-  // Selected Class & Subject
+  // Class & Subject State
   const [selectedClass, setSelectedClass] = useState('9th');
   const [selectedSubject, setSelectedSubject] = useState('Mathematics');
 
-  // Paper Controls
+  // Paper Display & Printing Controls
   const [twoColumnMode, setTwoColumnMode] = useState(false);
   const [showWatermark, setShowWatermark] = useState(true);
   const [languageMode, setLanguageMode] = useState('bilingual'); // 'bilingual' | 'en' | 'ur'
   const [showAnswerKey, setShowAnswerKey] = useState(false);
 
-  // Active Generated Paper State (Initially null - generated only when user clicks Generate)
+  // Active Generated Paper State
   const [paperData, setPaperData] = useState(null);
 
-
-  // Algorithm to generate balanced test (Auto Mode)
+  // Auto Generate Test Paper (Standard Board Scheme)
   const generateTestPaper = (config) => {
     const {
       selectedClass: cls,
@@ -173,7 +105,7 @@ export default function App() {
            selectedChapters.includes(q.chapter_no)
     );
 
-    // If pool is empty for specific subject, fall back to any questions for that subject or class
+    // Fallback if pool is empty
     if (pool.length === 0) {
       pool = questionBank.filter(q => q.class === cls && q.subject === subj);
     }
@@ -194,7 +126,7 @@ export default function App() {
     let chosenShorts = shuffle(availableShorts).slice(0, shortCount);
     let chosenLongs = shuffle(availableLongs).slice(0, longCount);
 
-    // Smart Replenishment: If selected single chapter has fewer questions than requested, supplement from wider pool
+    // Replenishment if chapter has fewer questions than requested
     const subjectPool = questionBank.filter(q => q.class === cls && q.subject === subj);
     const fallbackPool = subjectPool.length > 0 ? subjectPool : questionBank;
 
@@ -251,7 +183,7 @@ export default function App() {
     });
   };
 
-  // Generate test from teacher's handpicked questions (Manual Mode)
+  // Manual Generate Test Paper (Teacher Handpicked)
   const generateManualTestPaper = (config) => {
     const {
       selectedClass: cls,
@@ -294,7 +226,7 @@ export default function App() {
     });
   };
 
-  // Swap question feature
+  // Swap question on paper with another from bank
   const handleSwapQuestion = (type, index, currentQuestion) => {
     if (!paperData) return;
 
@@ -307,7 +239,6 @@ export default function App() {
     const currentList = type === 'mcq' ? paperData.mcqs : type === 'short' ? paperData.shortQuestions : paperData.longQuestions;
     const currentIds = new Set(currentList.map(q => q.id));
 
-    // Prioritize swap candidates from the same chapter to maintain syllabus balance
     let candidates = pool.filter(q => !currentIds.has(q.id) && q.chapter_no === currentQuestion?.chapter_no);
     if (candidates.length === 0) {
       candidates = pool.filter(q => !currentIds.has(q.id));
@@ -331,7 +262,7 @@ export default function App() {
     }
   };
 
-  // Delete question feature
+  // Delete question from paper
   const handleDeleteQuestion = (type, index) => {
     if (!paperData) return;
     if (type === 'mcq') {
@@ -346,7 +277,7 @@ export default function App() {
     }
   };
 
-  // Inline edit question
+  // Inline edit question on paper
   const handleEditQuestion = (type, index, updatedQuestion) => {
     if (!paperData) return;
     const currentList = type === 'mcq' ? paperData.mcqs : type === 'short' ? paperData.shortQuestions : paperData.longQuestions;
@@ -358,7 +289,7 @@ export default function App() {
     else setPaperData({ ...paperData, longQuestions: updated });
   };
 
-  // Add custom question to section directly on paper
+  // Add custom question directly to paper
   const handleAddQuestionToSection = (type) => {
     if (!paperData) return;
     const newQ = {
@@ -379,98 +310,10 @@ export default function App() {
     else setPaperData({ ...paperData, longQuestions: [...paperData.longQuestions, newQ] });
   };
 
-  // Update paper metadata (e.g. date, campus, time)
+  // Update paper metadata
   const handleUpdatePaperMeta = (field, value) => {
     if (!paperData) return;
     setPaperData({ ...paperData, [field]: value });
-  };
-
-  // Bulk Ingestion callback from UniversalUploader (Deduplicated by ID)
-  const handleIngestQuestions = (newQuestions) => {
-    setQuestionBank(prev => {
-      const map = new Map();
-      prev.forEach(q => map.set(q.id, q));
-      newQuestions.forEach(q => map.set(q.id, q));
-      return Array.from(map.values());
-    });
-
-    // Auto-sync new questions to MySQL (Node.js Web App first, then PHP fallback)
-    try {
-      fetch('/api/bulk_insert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newQuestions)
-      }).catch(() => {
-        fetch('/api.php?action=bulk_insert', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newQuestions)
-        });
-      });
-    } catch (e) {}
-  };
-
-  // Add question callback from QuestionBankViewer (Deduplicated by ID)
-  const handleAddQuestion = (newQuestion) => {
-    setQuestionBank(prev => [newQuestion, ...prev.filter(q => q.id !== newQuestion.id)]);
-    // Save to MySQL (Node.js Web App first, then PHP fallback)
-    try {
-      fetch('/api/questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newQuestion)
-      }).catch(() => {
-        fetch('/api.php?action=add_question', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newQuestion)
-        });
-      });
-    } catch (e) {}
-  };
-
-  // Edit existing question in Question Bank
-  const handleEditBankQuestion = (updatedQuestion) => {
-    setQuestionBank(prev => prev.map(q => q.id === updatedQuestion.id ? updatedQuestion : q));
-    // If current paper has this question, update it live as well
-    if (paperData) {
-      setPaperData(prev => {
-        if (!prev) return prev;
-        const updateQuestionsInList = (list) => (list || []).map(q => q.id === updatedQuestion.id ? { ...q, ...updatedQuestion } : q);
-        return {
-          ...prev,
-          sections: (prev.sections || []).map(sec => ({
-            ...sec,
-            questions: updateQuestionsInList(sec.questions)
-          })),
-          customSections: (prev.customSections || []).map(sec => ({
-            ...sec,
-            questions: updateQuestionsInList(sec.questions)
-          }))
-        };
-      });
-    }
-    // Sync update to server
-    try {
-      fetch('/api/questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedQuestion)
-      }).catch(() => {
-        fetch('/api.php?action=add_question', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedQuestion)
-        });
-      });
-    } catch (e) {}
-  };
-
-  // Delete question from central Question Bank
-  const handleDeleteBankQuestion = (questionId) => {
-    if (window.confirm('Are you sure you want to delete this question from the bank?')) {
-      setQuestionBank(prev => prev.filter(q => q.id !== questionId));
-    }
   };
 
   const handlePrint = () => {
@@ -495,68 +338,33 @@ export default function App() {
           </div>
         </div>
 
-        {/* Database Status & Sync Badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 10px',
-              borderRadius: '20px',
-              fontSize: '0.74rem',
-              fontWeight: 700,
-              background: dbStatus === 'connected' ? '#dcfce7' : '#fef3c7',
-              color: dbStatus === 'connected' ? '#166534' : '#92400e',
-              border: dbStatus === 'connected' ? '1px solid #86efac' : '1px solid #fde68a'
-            }}
-            title="Hostinger MySQL Database Connection Status"
-          >
-            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: dbStatus === 'connected' ? '#22c55e' : '#f59e0b' }}></span>
-            {dbMessage || 'Checking Database...'}
-          </div>
-
-          <button
-            onClick={handleSyncToDatabase}
-            style={{
-              background: 'transparent',
-              border: '1px solid #cbd5e1',
-              color: '#334155',
-              padding: '4px 8px',
-              borderRadius: '6px',
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-            title="Sync all questions to Hostinger MySQL Database"
-          >
-            <RefreshCw size={12} /> Sync DB
-          </button>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="nav-tabs">
-          <button
-            className={`nav-tab-btn ${activeTab === 'generator' ? 'active' : ''}`}
-            onClick={() => setActiveTab('generator')}
-          >
-            <Sparkles size={16} /> Test Generator
-          </button>
-          <button
-            className={`nav-tab-btn ${activeTab === 'uploader' ? 'active' : ''}`}
-            onClick={() => setActiveTab('uploader')}
-          >
-            <UploadCloud size={16} /> Upload Book / Page (Any Format)
-          </button>
-          <button
-            className={`nav-tab-btn ${activeTab === 'bank' ? 'active' : ''}`}
-            onClick={() => setActiveTab('bank')}
-          >
-            <Database size={16} /> Question Bank ({questionBank.length})
-          </button>
+        {/* Database Status Badge */}
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '5px 14px',
+            borderRadius: '20px',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            background: dbStatus === 'connected' ? '#dcfce7' : '#fef3c7',
+            color: dbStatus === 'connected' ? '#166534' : '#92400e',
+            border: dbStatus === 'connected' ? '1px solid #86efac' : '1px solid #fde68a'
+          }}
+          title="Live Hostinger MySQL Database Connection"
+        >
+          <span 
+            style={{ 
+              width: '8px', 
+              height: '8px', 
+              borderRadius: '50%', 
+              background: dbStatus === 'connected' ? '#22c55e' : '#f59e0b',
+              boxShadow: dbStatus === 'connected' ? '0 0 6px #22c55e' : 'none'
+            }} 
+          />
+          <Database size={13} />
+          {dbMessage}
         </div>
 
         {/* Global Action Bar */}
@@ -571,8 +379,8 @@ export default function App() {
               color: '#ffffff',
               border: '1px solid #1e3a8a',
               borderRadius: '6px',
-              padding: '6px 12px',
-              fontSize: '0.82rem',
+              padding: '7px 14px',
+              fontSize: '0.84rem',
               fontWeight: 700,
               cursor: 'pointer'
             }}
@@ -587,104 +395,84 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* Main Content: Focused Test Generator Split-View */}
       <main className="main-content">
-        {activeTab === 'generator' && (
-          <div className="generator-split-view">
-            {/* Left Sidebar: Controls & Filters */}
-            <div className="no-print">
-              <TestGeneratorWizard
-                questionBank={questionBank}
-                onGenerateTest={generateTestPaper}
-                onGenerateManualTest={generateManualTestPaper}
-                selectedClass={selectedClass}
-                setSelectedClass={setSelectedClass}
-                selectedSubject={selectedSubject}
-                setSelectedSubject={setSelectedSubject}
-              />
-            </div>
+        <div className="generator-split-view">
+          {/* Left Sidebar: Generator Wizard */}
+          <div className="no-print">
+            <TestGeneratorWizard
+              questionBank={questionBank}
+              onGenerateTest={generateTestPaper}
+              onGenerateManualTest={generateManualTestPaper}
+              selectedClass={selectedClass}
+              setSelectedClass={setSelectedClass}
+              selectedSubject={selectedSubject}
+              setSelectedSubject={setSelectedSubject}
+            />
+          </div>
 
-            {/* Right Area: Controls Bar + Live Branded Sheet */}
-            <div className="preview-area-wrapper">
-              {/* Paper Customization Toolbar (Screen only) */}
-              <div className="paper-controls-bar no-print">
-                <div className="controls-group">
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
-                    Paper Layout:
-                  </span>
-                  <button
-                    className={`toolbar-toggle-btn ${twoColumnMode ? 'active' : ''}`}
-                    onClick={() => setTwoColumnMode(!twoColumnMode)}
-                    title="Paper Saving 2-Column Mode fits full test on 1 page"
-                  >
-                    <Columns size={15} /> 2-Column (Paper Saver)
-                  </button>
-                  <button
-                    className={`toolbar-toggle-btn ${showWatermark ? 'active' : ''}`}
-                    onClick={() => setShowWatermark(!showWatermark)}
-                  >
-                    <ShieldCheck size={15} /> TCA Watermark
-                  </button>
-                </div>
-
-                <div className="controls-group">
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
-                    Language:
-                  </span>
-                  <select
-                    className="form-select"
-                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.82rem', width: 'auto' }}
-                    value={languageMode}
-                    onChange={(e) => setLanguageMode(e.target.value)}
-                  >
-                    <option value="bilingual">Bilingual (English + اردو)</option>
-                    <option value="en">English Only</option>
-                    <option value="ur">Urdu Only (اردو)</option>
-                  </select>
-
-                  <button
-                    className={`toolbar-toggle-btn ${showAnswerKey ? 'active' : ''}`}
-                    onClick={() => setShowAnswerKey(!showAnswerKey)}
-                    title="Toggle Solution & Marking Scheme"
-                  >
-                    <CheckCircle size={15} /> Answer Key
-                  </button>
-                </div>
+          {/* Right Area: Toolbar + Live Test Paper Sheet */}
+          <div className="preview-area-wrapper">
+            <div className="paper-controls-bar no-print">
+              <div className="controls-group">
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                  Paper Layout:
+                </span>
+                <button
+                  className={`toolbar-toggle-btn ${twoColumnMode ? 'active' : ''}`}
+                  onClick={() => setTwoColumnMode(!twoColumnMode)}
+                  title="Paper Saving 2-Column Mode fits full test on 1 page"
+                >
+                  <Columns size={15} /> 2-Column (Paper Saver)
+                </button>
+                <button
+                  className={`toolbar-toggle-btn ${showWatermark ? 'active' : ''}`}
+                  onClick={() => setShowWatermark(!showWatermark)}
+                >
+                  <ShieldCheck size={15} /> TCA Watermark
+                </button>
               </div>
 
-              {/* Physical Sheet Preview */}
-              <LiveTestPaper
-                paperData={paperData}
-                twoColumnMode={twoColumnMode}
-                showWatermark={showWatermark}
-                languageMode={languageMode}
-                showAnswerKey={showAnswerKey}
-                onSwapQuestion={handleSwapQuestion}
-                onDeleteQuestion={handleDeleteQuestion}
-                onEditQuestion={handleEditQuestion}
-                onAddQuestionToSection={handleAddQuestionToSection}
-                onUpdateMeta={handleUpdatePaperMeta}
-              />
+              <div className="controls-group">
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                  Language:
+                </span>
+                <select
+                  className="form-select"
+                  style={{ padding: '0.35rem 0.65rem', fontSize: '0.82rem', width: 'auto' }}
+                  value={languageMode}
+                  onChange={(e) => setLanguageMode(e.target.value)}
+                >
+                  <option value="bilingual">Bilingual (English + اردو)</option>
+                  <option value="en">English Only</option>
+                  <option value="ur">Urdu Only (اردو)</option>
+                </select>
+
+                <button
+                  className={`toolbar-toggle-btn ${showAnswerKey ? 'active' : ''}`}
+                  onClick={() => setShowAnswerKey(!showAnswerKey)}
+                  title="Toggle Solution & Marking Scheme"
+                >
+                  <CheckCircle size={15} /> Answer Key
+                </button>
+              </div>
             </div>
+
+            {/* Physical Test Paper Preview & Teacher Customization */}
+            <LiveTestPaper
+              paperData={paperData}
+              twoColumnMode={twoColumnMode}
+              showWatermark={showWatermark}
+              languageMode={languageMode}
+              showAnswerKey={showAnswerKey}
+              onSwapQuestion={handleSwapQuestion}
+              onDeleteQuestion={handleDeleteQuestion}
+              onEditQuestion={handleEditQuestion}
+              onAddQuestionToSection={handleAddQuestionToSection}
+              onUpdateMeta={handleUpdatePaperMeta}
+            />
           </div>
-        )}
-
-        {activeTab === 'uploader' && (
-          <UniversalUploader
-            onIngestQuestions={handleIngestQuestions}
-            onSwitchToGenerator={() => setActiveTab('generator')}
-          />
-        )}
-
-        {activeTab === 'bank' && (
-          <QuestionBankViewer
-            questionBank={questionBank}
-            onAddQuestion={handleAddQuestion}
-            onEditQuestion={handleEditBankQuestion}
-            onDeleteQuestion={handleDeleteBankQuestion}
-            onResetToMasterBank={handleResetToMasterBank}
-          />
-        )}
+        </div>
       </main>
     </div>
   );
