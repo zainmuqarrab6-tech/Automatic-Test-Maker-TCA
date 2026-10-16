@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Sparkles, Sliders, Layers, CheckSquare, Square, Check, Search, Filter, BookOpen } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { AVAILABLE_CLASSES, AVAILABLE_SUBJECTS } from '../data/questionBank';
+import { AVAILABLE_CLASSES, AVAILABLE_SUBJECTS, CURRICULUM_CHAPTERS_MAP } from '../data/questionBank';
 import MathRenderer from './MathRenderer';
 
 export default function TestGeneratorWizard({
@@ -17,7 +17,7 @@ export default function TestGeneratorWizard({
   const [selectedChapters, setSelectedChapters] = useState([1]);
   const [targetMarks, setTargetMarks] = useState(25);
   const [mcqCount, setMcqCount] = useState(5);
-  const [shortCount, setShortCount] = useState(6);
+  const [shortCount, setShortCount] = useState(8);
   const [longCount, setLongCount] = useState(2);
   const [timeAllowed, setTimeAllowed] = useState("45 Mins");
   const [testTitle, setTestTitle] = useState("Chapter-Wise Test Series 2026");
@@ -28,7 +28,7 @@ export default function TestGeneratorWizard({
   const [manualTypeFilter, setManualTypeFilter] = useState('all'); // 'all' | 'mcq' | 'short_question' | 'long_question'
   const [manualSearchQuery, setManualSearchQuery] = useState('');
 
-  // Filter available chapters from the question bank based on class & subject
+  // Filter available chapters from the question bank and standard curriculum
   const availableChapters = useMemo(() => {
     const list = [];
     const seen = new Set();
@@ -44,6 +44,16 @@ export default function TestGeneratorWizard({
           });
         }
       });
+
+    // Merge standard curriculum chapters if defined for this class & subject
+    const curriculumList = CURRICULUM_CHAPTERS_MAP?.[selectedClass]?.[selectedSubject] || [];
+    curriculumList.forEach(c => {
+      if (!seen.has(c.no)) {
+        seen.add(c.no);
+        list.push(c);
+      }
+    });
+
     return list.sort((a, b) => a.no - b.no);
   }, [questionBank, selectedClass, selectedSubject]);
 
@@ -59,37 +69,37 @@ export default function TestGeneratorWizard({
     }
   }, [availableChapters]);
 
-  // Handle Preset Marks Clicks
+  // Handle Preset Marks Clicks (Exact Punjab Board Scheme)
   const handlePresetMarks = (marks) => {
     setTargetMarks(marks);
     if (marks === 15) {
       setMcqCount(3);
-      setShortCount(4);
+      setShortCount(5);
       setLongCount(1);
       setTimeAllowed("30 Mins");
     } else if (marks === 20) {
       setMcqCount(4);
-      setShortCount(6);
+      setShortCount(7);
       setLongCount(1);
       setTimeAllowed("40 Mins");
     } else if (marks === 25) {
       setMcqCount(5);
-      setShortCount(6);
+      setShortCount(8);
       setLongCount(2);
       setTimeAllowed("45 Mins");
     } else if (marks === 35) {
       setMcqCount(7);
-      setShortCount(8);
+      setShortCount(10);
       setLongCount(3);
       setTimeAllowed("1 Hour");
     } else if (marks === 50) {
       setMcqCount(10);
-      setShortCount(12);
+      setShortCount(15);
       setLongCount(4);
       setTimeAllowed("1.5 Hours");
     } else if (marks === 75) {
       setMcqCount(15);
-      setShortCount(18);
+      setShortCount(22);
       setLongCount(6);
       setTimeAllowed("2.5 Hours");
     }
