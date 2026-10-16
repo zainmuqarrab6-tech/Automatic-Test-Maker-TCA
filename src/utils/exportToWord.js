@@ -211,8 +211,10 @@ export function exportTestPaperToWord(paperData, options = {}) {
 <!-- Header Table -->
 <table class="header-table" style="border-bottom: 2px solid #0c2340; padding-bottom: 6px;">
   <tr>
-    <td style="width: 15%; text-align: left;">
-      <img src="http://thecenturyacademy.com/images/cropped-Untitled-1.png" width="70" height="70" alt="Logo" style="object-fit: contain;" />
+    <td style="width: 15%; text-align: left; vertical-align: middle;">
+      <div style="width: 62px; height: 62px; border: 2.5px solid #0c2340; border-radius: 50%; text-align: center; vertical-align: middle; line-height: 62px; font-weight: 900; font-size: 14pt; color: #0c2340; background-color: #f8fafc; font-family: Arial, sans-serif;">
+        TCA
+      </div>
     </td>
     <td style="width: 60%; text-align: center;">
       <div class="school-title">The Century Academy</div>
@@ -220,7 +222,7 @@ export function exportTestPaperToWord(paperData, options = {}) {
       <div class="school-motto">"Where Fine Arts & Tech Skills Meet Academic Excellence"</div>
     </td>
     <td style="width: 25%;" class="campus-info">
-      <strong>Sargodha Road Campus</strong><br>
+      <strong>${campus || 'Sargodha Road Campus'}</strong><br>
       Faisalabad | Ph: +92 313 8272600<br>
       <span style="background: #e2e8f0; padding: 2px 4px; font-weight: bold; font-size: 8pt;">${testTitle}</span>
     </td>
@@ -304,12 +306,20 @@ export function exportTestPaperToWord(paperData, options = {}) {
 
   // SECTION C: LONG QUESTIONS & THEOREMS
   if (longQuestions.length > 0) {
+    const longNote = (paperData.targetMarks === 25 && longQuestions.length >= 2)
+      ? "Note: Attempt any ONE Question (or both parts a & b, 4 marks each). Overwriting is not allowed."
+      : (paperData.targetMarks === 50 && longQuestions.length >= 4)
+        ? "Note: Attempt any TWO Questions with complete working and diagrams."
+        : (paperData.targetMarks === 75 && longQuestions.length >= 6)
+          ? "Note: Attempt any THREE Questions including Compulsory Theorem."
+          : "Note: Attempt all extensive questions with step-by-step mathematical working and clean geometrical figures.";
+
     docContent += `
 <div class="section-banner">
   Q.3: LONG / EXTENSIVE QUESTIONS & THEOREMS (${longMarks} Marks)
 </div>
 <div class="instruction-text">
-  Note: Attempt all extensive questions with step-by-step mathematical working and clean geometrical figures.
+  ${longNote}
 </div>
 `;
 
