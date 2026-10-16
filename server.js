@@ -32,7 +32,8 @@ if (!fs.existsSync(distPath) || !fs.existsSync(path.join(distPath, 'index.html')
   }
 }
 
-// Serve static assets from Vite production build
+// Serve static assets from both public and dist directories
+app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(distPath));
 
 // MySQL Pool Configuration for Hostinger Web App
@@ -314,9 +315,12 @@ app.post('/api/bulk_insert', async (req, res) => {
 
 // Single Page Application Fallback for Hostinger Web App (Express 5 compatible)
 app.use((req, res) => {
-  const indexPath = path.join(__dirname, 'dist', 'index.html');
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
+  const publicIndex = path.join(__dirname, 'public', 'index.html');
+  const distIndex = path.join(__dirname, 'dist', 'index.html');
+  if (fs.existsSync(publicIndex)) {
+    res.sendFile(publicIndex);
+  } else if (fs.existsSync(distIndex)) {
+    res.sendFile(distIndex);
   } else {
     res.status(200).send(`
       <!DOCTYPE html>
