@@ -25,7 +25,7 @@ const distPath = path.join(__dirname, 'dist');
 if (!fs.existsSync(distPath) || !fs.existsSync(path.join(distPath, 'index.html'))) {
   try {
     console.log('[Server] Production dist not found. Triggering automated build: npm run build...');
-    execSync('npm run build', { stdio: 'inherit' });
+    execSync('npm run build', { stdio: 'pipe' });
     console.log('[Server] ✅ Automated build completed successfully!');
   } catch (err) {
     console.warn('[Server] Automated build notice:', err.message);
@@ -314,7 +314,33 @@ app.post('/api/bulk_insert', async (req, res) => {
 
 // Single Page Application Fallback for Hostinger Web App (Express 5 compatible)
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(200).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>The Century Academy Test Maker</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f2744; color: white; text-align: center; }
+          .card { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 2.5rem; border-radius: 14px; max-width: 480px; }
+          h2 { margin: 0 0 0.5rem 0; color: #38bdf8; font-size: 1.5rem; }
+          p { color: #cbd5e1; font-size: 0.95rem; line-height: 1.5; margin: 0; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h2>The Century Academy</h2>
+          <p>Test Maker portal is currently building and initializing. Please refresh in a few moments.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  }
 });
 
 app.listen(PORT, () => {
