@@ -66,22 +66,18 @@ export default function App() {
         if (res && res.ok) {
           const result = await res.json();
           const serverQuestions = result.data || result;
-          if (Array.isArray(serverQuestions) && serverQuestions.length > 0) {
-            const map = new Map();
-            INITIAL_QUESTION_BANK.forEach(q => map.set(q.id, q));
-            serverQuestions.forEach(q => map.set(q.id, q));
-            const merged = Array.from(map.values());
-            setQuestionBank(merged);
+          if (Array.isArray(serverQuestions)) {
+            setQuestionBank(serverQuestions);
             setDbStatus('connected');
-            setDbMessage(`MySQL Live (${merged.length} Questions)`);
+            setDbMessage(`MySQL Live (${serverQuestions.length} Questions)`);
             return;
           }
         }
       } catch (err) {
-        // Fallback to local cached mode
+        // Fallback
       }
       setDbStatus('cached');
-      setDbMessage(`Cached Mode (${questionBank.length} Questions)`);
+      setDbMessage('MySQL Connecting (0 Questions)');
     }
 
     loadDatabase();
