@@ -24,10 +24,24 @@ export function exportTestPaperToWord(paperData, options = {}) {
 
   // Marks Calculation
   const mcqMarks = mcqs.length * 1;
-  const shortAttemptCount = shortQuestions.length > 3 ? shortQuestions.length - 2 : shortQuestions.length;
+  let shortAttemptCount = shortQuestions.length;
+  if (shortQuestions.length >= 8) shortAttemptCount = shortQuestions.length - 2;
+  else if (shortQuestions.length === 7) shortAttemptCount = 6;
+  else if (shortQuestions.length === 5) shortAttemptCount = 4;
+  else if (shortQuestions.length > 3) shortAttemptCount = shortQuestions.length - 1;
+
   const shortMarks = shortAttemptCount * 2;
-  const longMarks = longQuestions.reduce((sum, q) => sum + (q.marks || 4), 0);
-  const totalMarks = mcqMarks + shortMarks + longMarks;
+  let longMarks = 0;
+  if (paperData.targetMarks === 25 && longQuestions.length >= 2) {
+    longMarks = 8;
+  } else if (paperData.targetMarks === 50 && longQuestions.length >= 4) {
+    longMarks = 16;
+  } else if (paperData.targetMarks === 75 && longQuestions.length >= 6) {
+    longMarks = 24;
+  } else {
+    longMarks = longQuestions.reduce((sum, q) => sum + (q.marks || 4), 0);
+  }
+  const totalMarks = paperData.targetMarks || paperData.totalMarks || (mcqMarks + shortMarks + longMarks);
 
   // Clean LaTeX notation for simple Word viewing
   const cleanLatex = (text) => {
