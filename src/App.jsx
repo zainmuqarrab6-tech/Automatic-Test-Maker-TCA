@@ -4,9 +4,7 @@ import {
   Columns, 
   ShieldCheck, 
   CheckCircle, 
-  FileDown, 
-  Database,
-  Sparkles
+  FileDown
 } from 'lucide-react';
 import { INITIAL_QUESTION_BANK } from './data/questionBank';
 import TestGeneratorWizard from './components/TestGeneratorWizard';
@@ -14,7 +12,7 @@ import LiveTestPaper from './components/LiveTestPaper';
 import { exportTestPaperToWord } from './utils/exportToWord';
 
 export default function App() {
-  // Central Question Bank in memory (Loaded live from MySQL)
+  // Central Question Bank in memory
   const [questionBank, setQuestionBank] = useState(INITIAL_QUESTION_BANK);
 
   // Clear residual storage on startup
@@ -23,52 +21,6 @@ export default function App() {
       localStorage.clear();
       sessionStorage.clear();
     } catch (e) {}
-  }, []);
-
-  // Database Connection Status
-  const [dbStatus, setDbStatus] = useState('checking'); // 'connected' | 'cached'
-  const [dbMessage, setDbMessage] = useState('Connecting to MySQL...');
-
-  // Fetch Questions from MySQL Database on mount
-  useEffect(() => {
-    async function loadDatabase() {
-      try {
-        let res = null;
-        // 1. Hostinger Node.js endpoint /api/questions
-        try {
-          res = await fetch('/api/questions', { cache: 'no-store' });
-        } catch (e) {}
-
-        // 2. Fallback to PHP API on Apache/LiteSpeed
-        if (!res || !res.ok) {
-          try {
-            res = await fetch('/api.php?action=get_questions', { cache: 'no-store' });
-          } catch (e) {}
-        }
-
-        // 3. Fallback to local dev port
-        if (!res || !res.ok) {
-          try {
-            res = await fetch('http://localhost:5000/api/questions');
-          } catch (e) {}
-        }
-
-        if (res && res.ok) {
-          const result = await res.json();
-          const serverQuestions = result.data || result;
-          if (Array.isArray(serverQuestions)) {
-            setQuestionBank(serverQuestions);
-            setDbStatus('connected');
-            setDbMessage(`MySQL Live (${serverQuestions.length} Questions)`);
-            return;
-          }
-        }
-      } catch (err) {}
-      setDbStatus('cached');
-      setDbMessage('MySQL Live (0 Questions)');
-    }
-
-    loadDatabase();
   }, []);
 
   // Class & Subject State
@@ -338,34 +290,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Database Status Badge */}
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '5px 14px',
-            borderRadius: '20px',
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            background: dbStatus === 'connected' ? '#dcfce7' : '#fef3c7',
-            color: dbStatus === 'connected' ? '#166534' : '#92400e',
-            border: dbStatus === 'connected' ? '1px solid #86efac' : '1px solid #fde68a'
-          }}
-          title="Live Hostinger MySQL Database Connection"
-        >
-          <span 
-            style={{ 
-              width: '8px', 
-              height: '8px', 
-              borderRadius: '50%', 
-              background: dbStatus === 'connected' ? '#22c55e' : '#f59e0b',
-              boxShadow: dbStatus === 'connected' ? '0 0 6px #22c55e' : 'none'
-            }} 
-          />
-          <Database size={13} />
-          {dbMessage}
-        </div>
 
         {/* Global Action Bar */}
         <div className="nav-actions" style={{ display: 'flex', gap: '8px' }}>

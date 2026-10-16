@@ -1,6 +1,4 @@
-// The Century Academy - Dynamic Question Bank & Curriculum Architecture
-// Pure Database-Driven Mode: All questions and chapters are loaded directly from MySQL Database.
-// No hardcoded local questions or static curriculum maps.
+// The Century Academy - Test Maker Curriculum Architecture
 
 export const INITIAL_QUESTION_BANK = [];
 
