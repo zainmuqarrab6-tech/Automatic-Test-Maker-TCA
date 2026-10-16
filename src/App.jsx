@@ -318,7 +318,12 @@ export default function App() {
 
     const currentList = type === 'mcq' ? paperData.mcqs : type === 'short' ? paperData.shortQuestions : paperData.longQuestions;
     const currentIds = new Set(currentList.map(q => q.id));
-    const candidates = pool.filter(q => !currentIds.has(q.id));
+
+    // Prioritize swap candidates from the same chapter to maintain syllabus balance
+    let candidates = pool.filter(q => !currentIds.has(q.id) && q.chapter_no === currentQuestion?.chapter_no);
+    if (candidates.length === 0) {
+      candidates = pool.filter(q => !currentIds.has(q.id));
+    }
 
     if (candidates.length === 0) {
       alert("No additional questions available in this pool to swap with.");
