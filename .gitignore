@@ -7,3 +7,6 @@ Thumbs.db
 *.log
 *.pdf
 9th-Mathematics-New-Syllabus-Full-Book-PDF.pdf
+.env
+.env*.local
+!.env.example
