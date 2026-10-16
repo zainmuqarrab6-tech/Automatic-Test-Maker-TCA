@@ -334,12 +334,18 @@ export default function App() {
   // Bulk Ingestion callback from UniversalUploader
   const handleIngestQuestions = (newQuestions) => {
     setQuestionBank(prev => [...newQuestions, ...prev]);
-    // Auto-sync new questions to MySQL
+    // Auto-sync new questions to MySQL (Node.js Web App first, then PHP fallback)
     try {
-      fetch('/api.php?action=bulk_insert', {
+      fetch('/api/bulk_insert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newQuestions)
+      }).catch(() => {
+        fetch('/api.php?action=bulk_insert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newQuestions)
+        });
       });
     } catch (e) {}
   };
@@ -347,12 +353,18 @@ export default function App() {
   // Add question callback from QuestionBankViewer
   const handleAddQuestion = (newQuestion) => {
     setQuestionBank(prev => [newQuestion, ...prev]);
-    // Save to MySQL
+    // Save to MySQL (Node.js Web App first, then PHP fallback)
     try {
-      fetch('/api.php?action=add_question', {
+      fetch('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newQuestion)
+      }).catch(() => {
+        fetch('/api.php?action=add_question', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newQuestion)
+        });
       });
     } catch (e) {}
   };
