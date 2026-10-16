@@ -133,7 +133,7 @@ export default function LiveTestPaper({
     longMarks = longQuestions.reduce((sum, q) => sum + (q.marks || 4), 0);
   }
 
-  const accurateTotalMarks = paperData.totalMarks || paperData.targetMarks || (mcqMarks + shortMarks + longMarks);
+  const accurateTotalMarks = (mcqMarks + shortMarks + longMarks);
   const totalObtainedMarksString = `[      / ${accurateTotalMarks} ]`;
 
   const handleSaveEdit = (e) => {
@@ -200,9 +200,25 @@ export default function LiveTestPaper({
               </div>
             </div>
             <div className="header-campus-info">
-              <strong>{campus}</strong>
+              <strong
+                className="editable-text-field"
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => onUpdateMeta && onUpdateMeta('campus', e.currentTarget.textContent.trim())}
+                title="Click to edit campus name"
+              >
+                {campus}
+              </strong>
               <div>Faisalabad | Ph: +92 313 8272600</div>
-              <div className="test-series-badge">Test Series: {testTitle}</div>
+              <div 
+                className="test-series-badge editable-text-field"
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => onUpdateMeta && onUpdateMeta('testTitle', e.currentTarget.textContent.trim())}
+                title="Click to edit test title"
+              >
+                Test Series: {testTitle}
+              </div>
             </div>
           </div>
 
