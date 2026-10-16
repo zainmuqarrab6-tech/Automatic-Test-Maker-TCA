@@ -3,8 +3,12 @@ DirectoryIndex index.html index.php
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
-  RewriteRule ^index\.html$ - [L]
+
+  # Serve index.html directly for root requests to bypass proxy 503
+  RewriteRule ^$ index.html [L]
+
+  # SPA fallback for all non-file routes
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule . /index.html [L]
+  RewriteRule ^.*$ index.html [L]
 </IfModule>
