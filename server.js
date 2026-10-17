@@ -381,6 +381,12 @@ process.on('unhandledRejection', (reason) => {
   console.error('[Hostinger Process] unhandledRejection caught:', reason);
 });
 
-app.listen(PORT, () => {
-  console.log(`[Hostinger Web App] The Century Academy Test Maker Server running on port ${PORT}`);
-});
+if (typeof PORT === 'string' && isNaN(Number(PORT))) {
+  app.listen(PORT, () => {
+    console.log(`[Hostinger Web App] The Century Academy Test Maker Server running on socket ${PORT}`);
+  });
+} else {
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`[Hostinger Web App] The Century Academy Test Maker Server running on 0.0.0.0:${PORT}`);
+  });
+}

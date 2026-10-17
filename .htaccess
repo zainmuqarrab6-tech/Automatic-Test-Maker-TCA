@@ -1,30 +1,22 @@
-DirectoryIndex index.php index.html
+DirectoryIndex index.html index.php
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
 
-  # Direct pass-through for assets, API files, and PHP entry
-  RewriteRule ^(dist/|public/|assets/|images/|api\.php|index\.php|public/api\.php) - [L]
-
-  # If requested path is a real file or folder, serve directly
+  # Serve real physical files and directories directly
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Serve compiled production HTML for root request
-  RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
-  RewriteRule ^$ dist/index.html [L]
+  # Allow Node.js API endpoints and PHP API to pass through
+  RewriteRule ^(api/|api\.php|public/api\.php) - [L]
 
-  RewriteCond %{DOCUMENT_ROOT}/public/index.html -f
-  RewriteRule ^$ public/index.html [L]
+  # Serve index.html directly for root requests to bypass proxy 503
+  RewriteRule ^$ index.html [L]
 
-  # SPA fallback for client-side routing
-  RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
-  RewriteRule ^.*$ dist/index.html [L]
-
-  RewriteCond %{DOCUMENT_ROOT}/public/index.html -f
-  RewriteRule ^.*$ public/index.html [L]
-
-  RewriteRule ^.*$ index.php [L]
+  # SPA fallback for all non-file client routes
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^.*$ index.html [L]
 </IfModule>
