@@ -5,6 +5,7 @@ from app.models.syllabus import SyllabusDivision, SyllabusDivisionChapter
 from app.models.scheme import PaperScheme, SchemeSection
 from app.models.test_paper import GeneratedTest, GeneratedTestQuestion
 from app.models.upload import Upload
+from app.models.user import User
 
 __all__ = [
     "Base",
@@ -20,5 +21,6 @@ __all__ = [
     "SchemeSection",
     "GeneratedTest",
     "GeneratedTestQuestion",
-    "Upload"
+    "Upload",
+    "User"
 ]

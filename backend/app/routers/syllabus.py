@@ -11,13 +11,28 @@ from app.schemas.syllabus import (
 router = APIRouter(tags=["Syllabus Divisions"])
 
 def format_division(d: SyllabusDivision) -> dict:
+    weightages = []
+    chapter_ids = []
+    for link in d.chapters:
+        chapter_ids.append(link.chapter_id)
+        weightages.append({
+            "chapter_id": link.chapter_id,
+            "weightage_percent": getattr(link, "weightage_percent", 0.0) or 0.0
+        })
+
+    subj_name = d.subject.name if d.subject else None
+    class_name = d.subject.class_rel.name if d.subject and d.subject.class_rel else None
+
     return {
         "id": d.id,
         "subject_id": d.subject_id,
         "name": d.name,
         "description": d.description,
         "created_at": d.created_at,
-        "chapter_ids": [link.chapter_id for link in d.chapters]
+        "chapter_ids": chapter_ids,
+        "chapter_weightages": weightages,
+        "subject_name": subj_name,
+        "class_name": class_name
     }
 
 @router.get("/syllabus-divisions", response_model=List[SyllabusDivisionOut])
@@ -36,7 +51,7 @@ def get_syllabus_divisions(
 @router.post("/syllabus-divisions", response_model=SyllabusDivisionOut, status_code=status.HTTP_201_CREATED)
 @router.post("/syllabus", response_model=SyllabusDivisionOut, status_code=status.HTTP_201_CREATED)
 def create_syllabus_division(payload: SyllabusDivisionCreate, db: Session = Depends(get_db)):
-    """Create a new syllabus division and link chapters."""
+    """Create a new syllabus division and link chapters with optional weightages."""
     sub = db.query(Subject).filter(Subject.id == payload.subject_id).first()
     if not sub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found.")
@@ -49,12 +64,21 @@ def create_syllabus_division(payload: SyllabusDivisionCreate, db: Session = Depe
     db.add(new_div)
     db.flush()
 
-    if payload.chapter_ids:
-        for ch_id in payload.chapter_ids:
-            ch = db.query(Chapter).filter(Chapter.id == ch_id).first()
-            if ch:
-                link = SyllabusDivisionChapter(syllabus_division_id=new_div.id, chapter_id=ch_id)
-                db.add(link)
+    weight_map = {}
+    if payload.chapter_weightages:
+        for cw in payload.chapter_weightages:
+            weight_map[cw.chapter_id] = cw.weightage_percent or 0.0
+
+    target_ch_ids = payload.chapter_ids or list(weight_map.keys())
+    for ch_id in target_ch_ids:
+        ch = db.query(Chapter).filter(Chapter.id == ch_id).first()
+        if ch:
+            link = SyllabusDivisionChapter(
+                syllabus_division_id=new_div.id,
+                chapter_id=ch_id,
+                weightage_percent=weight_map.get(ch_id, 0.0)
+            )
+            db.add(link)
 
     db.commit()
     db.refresh(new_div)
@@ -72,7 +96,7 @@ def get_syllabus_division(division_id: int, db: Session = Depends(get_db)):
 @router.put("/syllabus-divisions/{division_id}", response_model=SyllabusDivisionOut)
 @router.put("/syllabus/{division_id}", response_model=SyllabusDivisionOut)
 def update_syllabus_division(division_id: int, payload: SyllabusDivisionUpdate, db: Session = Depends(get_db)):
-    """Update syllabus division and associated chapters."""
+    """Update syllabus division and associated chapters with weightages."""
     d = db.query(SyllabusDivision).filter(SyllabusDivision.id == division_id).first()
     if not d:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Syllabus division not found.")
@@ -84,13 +108,23 @@ def update_syllabus_division(division_id: int, payload: SyllabusDivisionUpdate, 
     if payload.description is not None:
         d.description = payload.description
 
-    if payload.chapter_ids is not None:
-        # Clear existing links and re-add
+    if payload.chapter_ids is not None or payload.chapter_weightages is not None:
         db.query(SyllabusDivisionChapter).filter(
             SyllabusDivisionChapter.syllabus_division_id == division_id
         ).delete()
-        for ch_id in payload.chapter_ids:
-            link = SyllabusDivisionChapter(syllabus_division_id=division_id, chapter_id=ch_id)
+
+        weight_map = {}
+        if payload.chapter_weightages:
+            for cw in payload.chapter_weightages:
+                weight_map[cw.chapter_id] = cw.weightage_percent or 0.0
+
+        target_ch_ids = payload.chapter_ids if payload.chapter_ids is not None else list(weight_map.keys())
+        for ch_id in target_ch_ids:
+            link = SyllabusDivisionChapter(
+                syllabus_division_id=division_id,
+                chapter_id=ch_id,
+                weightage_percent=weight_map.get(ch_id, 0.0)
+            )
             db.add(link)
 
     db.commit()

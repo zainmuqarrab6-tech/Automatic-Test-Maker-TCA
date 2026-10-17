@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Sparkles, Sliders, Layers, CheckSquare, Square, Check, Search, Filter, BookOpen } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Sparkles, Sliders, Layers, CheckSquare, Square, Check, Search, Filter, BookOpen, AlertTriangle, Loader2, FileSpreadsheet } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AVAILABLE_CLASSES, AVAILABLE_SUBJECTS } from '../data/questionBank';
 import MathRenderer from './MathRenderer';
@@ -8,13 +8,24 @@ export default function TestGeneratorWizard({
   questionBank,
   onGenerateTest,
   onGenerateManualTest,
+  onGenerateBackendTest,
   selectedClass,
   setSelectedClass,
   selectedSubject,
   setSelectedSubject,
   backendMetadata = null
 }) {
-  const [generationMode, setGenerationMode] = useState('auto'); // 'auto' | 'manual'
+  const [generationMode, setGenerationMode] = useState('scheme'); // 'scheme' | 'auto' | 'manual'
+
+  // Backend Scheme & Syllabus Division Generation State
+  const [syllabusDivisions, setSyllabusDivisions] = useState([]);
+  const [paperSchemes, setPaperSchemes] = useState([]);
+  const [selectedDivisionId, setSelectedDivisionId] = useState('');
+  const [selectedSchemeId, setSelectedSchemeId] = useState('');
+  const [nRecentTests, setNRecentTests] = useState(3);
+  const [loadingBackendData, setLoadingBackendData] = useState(false);
+  const [generatingBackend, setGeneratingBackend] = useState(false);
+  const [shortageErrors, setShortageErrors] = useState(null);
   
   // Syllabus & Chapter Range Selection Mode
   // 'full_chapter' | 'half_chapter' | 'page_range' | 'custom_command'
@@ -52,7 +63,7 @@ export default function TestGeneratorWizard({
   // Dynamically resolve classes from backend metadata or fallback
   const dynamicClasses = useMemo(() => {
     if (backendMetadata?.classes?.length) {
-      return backendMetadata.classes.map(c => c.name);
+      return backendMetadata.classes.map(c => typeof c === 'string' ? c : c.name);
     }
     return AVAILABLE_CLASSES;
   }, [backendMetadata]);
@@ -60,13 +71,58 @@ export default function TestGeneratorWizard({
   // Dynamically resolve subjects for current class from backend metadata or fallback
   const dynamicSubjects = useMemo(() => {
     if (backendMetadata?.classes?.length) {
-      const clsObj = backendMetadata.classes.find(c => c.name === selectedClass);
+      const clsObj = backendMetadata.classes.find(c => (typeof c === 'string' ? c : c.name) === selectedClass);
       if (clsObj && clsObj.subjects?.length) {
-        return clsObj.subjects.map(s => s.name);
+        return clsObj.subjects.map(s => typeof s === 'string' ? s : s.name);
       }
+    }
+    if (backendMetadata?.subjects && Array.isArray(backendMetadata.subjects[selectedClass])) {
+      return backendMetadata.subjects[selectedClass];
     }
     return AVAILABLE_SUBJECTS[selectedClass] || [];
   }, [backendMetadata, selectedClass]);
+
+  // Current Subject Object and ID from backend metadata
+  const currentSubjectObj = useMemo(() => {
+    if (backendMetadata?.classes?.length) {
+      const clsObj = backendMetadata.classes.find(c => (typeof c === 'string' ? c : c.name) === selectedClass);
+      return clsObj?.subjects?.find(s => (typeof s === 'string' ? s : s.name) === selectedSubject);
+    }
+    return null;
+  }, [backendMetadata, selectedClass, selectedSubject]);
+
+  const currentSubjectId = currentSubjectObj?.id;
+
+  // Load Syllabus Divisions and Paper Schemes for this Subject
+  useEffect(() => {
+    if (!currentSubjectId) return;
+    setLoadingBackendData(true);
+    setShortageErrors(null);
+
+    Promise.all([
+      fetch(`/api/v1/syllabus-divisions?subject_id=${currentSubjectId}`).then(r => r.ok ? r.json() : []),
+      fetch(`/api/v1/schemes?subject_id=${currentSubjectId}`).then(r => r.ok ? r.json() : [])
+    ]).then(([divs, schs]) => {
+      const validDivs = Array.isArray(divs) ? divs : [];
+      const validSchs = Array.isArray(schs) ? schs : [];
+      setSyllabusDivisions(validDivs);
+      setPaperSchemes(validSchs);
+      if (validDivs.length > 0) setSelectedDivisionId(String(validDivs[0].id));
+      else setSelectedDivisionId('');
+      if (validSchs.length > 0) {
+        setSelectedSchemeId(String(validSchs[0].id));
+        setTargetMarks(validSchs[0].total_marks);
+        if (validSchs[0].duration_minutes) setTimeAllowed(`${validSchs[0].duration_minutes} Mins`);
+        setTestTitle(validSchs[0].name);
+      } else {
+        setSelectedSchemeId('');
+      }
+    }).catch(err => {
+      console.warn('Error fetching divisions/schemes in wizard:', err);
+    }).finally(() => {
+      setLoadingBackendData(false);
+    });
+  }, [currentSubjectId]);
 
   // Dynamically extract available chapters from the database metadata or question bank
   const availableChapters = useMemo(() => {
@@ -312,6 +368,58 @@ export default function TestGeneratorWizard({
   }, [manualQuestionPool, manualSelectedIds]);
 
   const handleGenerateClick = () => {
+    // 1. Backend Scheme & Syllabus Generation Mode (Board Pattern)
+    if (generationMode === 'scheme') {
+      if (!currentSubjectId) {
+        alert("Subject not resolved. Please select a valid class and subject.");
+        return;
+      }
+      if (!selectedDivisionId) {
+        alert("Please select a Syllabus Division (e.g. Midterm Exam). You can create one in the 'Schemes & Syllabus' tab.");
+        return;
+      }
+      if (!selectedSchemeId) {
+        alert("Please select a Paper Scheme. You can create one in the 'Schemes & Syllabus' tab.");
+        return;
+      }
+
+      setGeneratingBackend(true);
+      setShortageErrors(null);
+
+      if (onGenerateBackendTest) {
+        onGenerateBackendTest({
+          subject_id: Number(currentSubjectId),
+          syllabus_division_id: Number(selectedDivisionId),
+          paper_scheme_id: Number(selectedSchemeId),
+          n_recent_tests: Number(nRecentTests) || 0,
+          title: testTitle,
+          campus: campus,
+          time_allowed: timeAllowed
+        }).then(result => {
+          setGeneratingBackend(false);
+          if (result && result.success) {
+            try {
+              confetti({
+                particleCount: 50,
+                spread: 70,
+                origin: { y: 0.7 }
+              });
+            } catch (e) {}
+          } else if (result) {
+            if (result.shortages && result.shortages.length > 0) {
+              setShortageErrors(result.shortages);
+            } else {
+              alert(`Test Generation: ${result.message}`);
+            }
+          }
+        }).catch(err => {
+          setGeneratingBackend(false);
+          alert(`Test Generation Error: ${err.message}`);
+        });
+      }
+      return;
+    }
+
     try {
       confetti({
         particleCount: 40,
@@ -376,38 +484,70 @@ export default function TestGeneratorWizard({
       </div>
 
       {/* Mode Switcher Tabs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '14px', background: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '6px', marginBottom: '14px', background: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
+        <button
+          type="button"
+          onClick={() => setGenerationMode('scheme')}
+          style={{
+            padding: '6px 6px',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            borderRadius: '6px',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            background: generationMode === 'scheme' ? '#1e3a8a' : 'transparent',
+            color: generationMode === 'scheme' ? '#ffffff' : '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px'
+          }}
+          title="Board Scheme & Syllabus Division based generation"
+        >
+          🎯 Scheme & Terms
+        </button>
         <button
           type="button"
           onClick={() => setGenerationMode('auto')}
           style={{
-            padding: '6px 10px',
-            fontSize: '0.8rem',
+            padding: '6px 6px',
+            fontSize: '0.78rem',
             fontWeight: 700,
             borderRadius: '6px',
             border: 'none',
             cursor: 'pointer',
             transition: 'all 0.2s',
             background: generationMode === 'auto' ? '#1e3a8a' : 'transparent',
-            color: generationMode === 'auto' ? '#ffffff' : '#64748b'
+            color: generationMode === 'auto' ? '#ffffff' : '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px'
           }}
+          title="Quick Marks Preset Generator"
         >
-          ⚡ Auto Generator
+          ⚡ Quick Presets
         </button>
         <button
           type="button"
           onClick={() => setGenerationMode('manual')}
           style={{
-            padding: '6px 10px',
-            fontSize: '0.8rem',
+            padding: '6px 6px',
+            fontSize: '0.78rem',
             fontWeight: 700,
             borderRadius: '6px',
             border: 'none',
             cursor: 'pointer',
             transition: 'all 0.2s',
             background: generationMode === 'manual' ? '#1e3a8a' : 'transparent',
-            color: generationMode === 'manual' ? '#ffffff' : '#64748b'
+            color: generationMode === 'manual' ? '#ffffff' : '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px'
           }}
+          title="Handpick Questions Manually"
         >
           ✍️ Manual Picker
         </button>
@@ -453,7 +593,281 @@ export default function TestGeneratorWizard({
         </select>
       </div>
 
+      {/* 3. SCHEME & SYLLABUS DIVISION MODE */}
+      {generationMode === 'scheme' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Syllabus Division Card */}
+          <div className="form-group" style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label className="form-label" style={{ marginBottom: 0, fontWeight: 800, color: '#0f2744', fontSize: '0.88rem' }}>
+                3. Syllabus Division (امتحانی نصاب و ٹرم)
+              </label>
+              {loadingBackendData && <Loader2 size={14} className="animate-spin text-blue-600" />}
+            </div>
+
+            {syllabusDivisions.length === 0 ? (
+              <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', padding: '10px', fontSize: '0.78rem', color: '#92400e' }}>
+                ⚠️ No syllabus divisions found for <strong>{selectedSubject}</strong>.
+                <div style={{ marginTop: '4px', fontSize: '0.74rem', color: '#78350f' }}>
+                  Please go to the <strong>"Schemes & Syllabus"</strong> tab to create a term or division (e.g. Midterm, Units 1-4).
+                </div>
+              </div>
+            ) : (
+              <div>
+                <select
+                  className="form-select"
+                  value={selectedDivisionId}
+                  onChange={(e) => {
+                    setSelectedDivisionId(e.target.value);
+                    setShortageErrors(null);
+                  }}
+                  style={{ fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  {syllabusDivisions.map(div => (
+                    <option key={div.id} value={div.id}>
+                      {div.name} ({div.chapter_ids?.length || 0} Chapters)
+                    </option>
+                  ))}
+                </select>
+
+                {/* Selected Division Info Box */}
+                {(() => {
+                  const currDiv = syllabusDivisions.find(d => String(d.id) === String(selectedDivisionId));
+                  if (!currDiv) return null;
+                  const hasWeightages = currDiv.chapter_weightages && currDiv.chapter_weightages.some(w => (w.weightage_percent || 0) > 0);
+
+                  return (
+                    <div style={{ marginTop: '8px', padding: '8px 10px', background: '#ffffff', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.75rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 700, color: '#1e3a8a' }}>
+                          Included Chapters ({currDiv.chapter_ids?.length || 0}):
+                        </span>
+                        <span style={{
+                          padding: '1px 6px',
+                          borderRadius: '10px',
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          background: hasWeightages ? '#dcfce7' : '#f1f5f9',
+                          color: hasWeightages ? '#15803d' : '#475569'
+                        }}>
+                          {hasWeightages ? '⚖️ Proportional Weightage' : '⚖️ Even Distribution'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {currDiv.chapter_ids?.map(chId => {
+                          const wObj = currDiv.chapter_weightages?.find(w => w.chapter_id === chId);
+                          const chObj = availableChapters.find(c => c.no === chId);
+                          return (
+                            <span
+                              key={chId}
+                              style={{
+                                background: '#eff6ff',
+                                color: '#1e40af',
+                                border: '1px solid #bfdbfe',
+                                borderRadius: '4px',
+                                padding: '2px 6px',
+                                fontSize: '0.72rem',
+                                fontWeight: 600
+                              }}
+                            >
+                              Unit {chId}{chObj ? `: ${chObj.title_en}` : ''}
+                              {wObj && (wObj.weightage_percent || 0) > 0 ? ` (${wObj.weightage_percent}%)` : ''}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+
+          {/* Paper Scheme Card */}
+          <div className="form-group" style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label className="form-label" style={{ marginBottom: 0, fontWeight: 800, color: '#0f2744', fontSize: '0.88rem' }}>
+                4. Paper Scheme (امتحانی پیپر سکیم)
+              </label>
+              {paperSchemes.length > 0 && (
+                <span style={{ fontSize: '0.72rem', background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+                  {paperSchemes.length} Scheme{paperSchemes.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+
+            {paperSchemes.length === 0 ? (
+              <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', padding: '10px', fontSize: '0.78rem', color: '#92400e' }}>
+                ⚠️ No paper schemes found for <strong>{selectedSubject}</strong>.
+                <div style={{ marginTop: '4px', fontSize: '0.74rem', color: '#78350f' }}>
+                  Please go to the <strong>"Schemes & Syllabus"</strong> tab to create or upload a paper scheme.
+                </div>
+              </div>
+            ) : (
+              <div>
+                <select
+                  className="form-select"
+                  value={selectedSchemeId}
+                  onChange={(e) => {
+                    const sid = e.target.value;
+                    setSelectedSchemeId(sid);
+                    setShortageErrors(null);
+                    const sch = paperSchemes.find(s => String(s.id) === String(sid));
+                    if (sch) {
+                      setTargetMarks(sch.total_marks);
+                      if (sch.duration_minutes) setTimeAllowed(`${sch.duration_minutes} Mins`);
+                      setTestTitle(sch.name);
+                    }
+                  }}
+                  style={{ fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  {paperSchemes.map(sch => (
+                    <option key={sch.id} value={sch.id}>
+                      {sch.name} ({sch.total_marks} Marks, {sch.duration_minutes || 60}m)
+                    </option>
+                  ))}
+                </select>
+
+                {/* Selected Scheme Section Breakdown */}
+                {(() => {
+                  const currSch = paperSchemes.find(s => String(s.id) === String(selectedSchemeId));
+                  if (!currSch || !currSch.sections?.length) return null;
+
+                  return (
+                    <div style={{ marginTop: '8px', background: '#ffffff', borderRadius: '6px', border: '1px solid #e2e8f0', padding: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '0.74rem' }}>
+                        <span style={{ fontWeight: 700, color: '#0f2744' }}>
+                          Scheme Layout ({currSch.sections.length} Sections, {currSch.total_marks} Total Marks):
+                        </span>
+                        <span style={{ color: '#64748b', fontWeight: 600 }}>⏱️ {currSch.duration_minutes || 60} Mins</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {currSch.sections.map((sec, idx) => {
+                          const typeLabel = sec.question_type === 'mcq' ? 'MCQ' : sec.question_type === 'short' ? 'Short Q' : 'Long Q';
+                          const typeBg = sec.question_type === 'mcq' ? '#e0f2fe' : sec.question_type === 'short' ? '#fef3c7' : '#f0fdf4';
+                          const typeColor = sec.question_type === 'mcq' ? '#0369a1' : sec.question_type === 'short' ? '#92400e' : '#166534';
+                          const secMarks = (sec.number_to_attempt || sec.number_of_questions) * sec.marks_per_question;
+
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '4px 6px',
+                                background: '#f8fafc',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                border: '1px solid #f1f5f9'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: 700, color: '#1e293b' }}>{sec.section_name}</span>
+                                <span style={{ background: typeBg, color: typeColor, padding: '1px 5px', borderRadius: '3px', fontWeight: 700, fontSize: '0.65rem' }}>
+                                  {typeLabel}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: '#475569' }}>
+                                  Pick <strong>{sec.number_of_questions}</strong> (Attempt {sec.number_to_attempt})
+                                </span>
+                                <span style={{ fontWeight: 700, color: '#0f2744', background: '#e2e8f0', padding: '1px 5px', borderRadius: '3px' }}>
+                                  {secMarks}M
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Difficulty Mix Indicator if set */}
+                      {currSch.sections.some(s => s.difficulty_mix && Object.keys(s.difficulty_mix).length > 0) && (
+                        <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed #e2e8f0', fontSize: '0.68rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontWeight: 700, color: '#475569' }}>🎯 Difficulty Mix Configured</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+
+          {/* Avoid Repetition Configuration (Last N Generated Tests) */}
+          <div className="form-group" style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <label className="form-label" style={{ marginBottom: 0, fontWeight: 800, color: '#0f2744', fontSize: '0.85rem' }}>
+                5. Question Repetition Control (سوالات کی تازگی)
+              </label>
+              <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Avoid Last N Tests</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+              <input
+                type="number"
+                min="0"
+                max="20"
+                className="form-input"
+                style={{ width: '80px', textAlign: 'center', fontWeight: 700, padding: '5px' }}
+                value={nRecentTests}
+                onChange={(e) => setNRecentTests(Math.max(0, parseInt(e.target.value) || 0))}
+              />
+              <span style={{ fontSize: '0.74rem', color: '#475569', lineHeight: 1.3 }}>
+                Exclude questions that appeared in the last <strong>{nRecentTests}</strong> generated tests of this subject to guarantee unique papers.
+              </span>
+            </div>
+          </div>
+
+          {/* Shortage Error Banner (if question bank does not have enough approved questions) */}
+          {shortageErrors && shortageErrors.length > 0 && (
+            <div style={{
+              background: '#fef2f2',
+              border: '1px solid #f87171',
+              borderRadius: '8px',
+              padding: '12px',
+              color: '#991b1b'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '0.82rem', marginBottom: '6px' }}>
+                <AlertTriangle size={18} color="#dc2626" />
+                <span>Question Bank Shortage Detected!</span>
+              </div>
+              <p style={{ fontSize: '0.74rem', marginBottom: '8px', color: '#b91c1c' }}>
+                Cannot generate test paper without crashing. The following sections/chapters are short of approved questions:
+              </p>
+              <div style={{ background: '#ffffff', borderRadius: '6px', border: '1px solid #fecaca', overflow: 'hidden' }}>
+                <table style={{ width: '100%', fontSize: '0.72rem', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#fee2e2', color: '#7f1d1d', textAlign: 'left' }}>
+                      <th style={{ padding: '5px 8px' }}>Section</th>
+                      <th style={{ padding: '5px 8px' }}>Chapter</th>
+                      <th style={{ padding: '5px 8px', textAlign: 'center' }}>Required</th>
+                      <th style={{ padding: '5px 8px', textAlign: 'center' }}>Available</th>
+                      <th style={{ padding: '5px 8px', textAlign: 'right' }}>Short By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shortageErrors.map((err, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid #fee2e2' }}>
+                        <td style={{ padding: '5px 8px', fontWeight: 600 }}>{err.section_name}</td>
+                        <td style={{ padding: '5px 8px' }}>Unit {err.chapter_number}</td>
+                        <td style={{ padding: '5px 8px', textAlign: 'center' }}>{err.required_count}</td>
+                        <td style={{ padding: '5px 8px', textAlign: 'center', color: '#16a34a', fontWeight: 700 }}>{err.available_count}</td>
+                        <td style={{ padding: '5px 8px', textAlign: 'right', color: '#dc2626', fontWeight: 800 }}>-{err.shortage_count} Qs</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#7f1d1d', marginTop: '8px' }}>
+                💡 <strong>Action Required:</strong> Visit the <strong>"Review Questions"</strong> tab to approve draft questions for the short chapters, or upload more pages.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 3. Syllabus & Chapter Scope Selection (Full Chapter, Half Chapter, Page Range, Teacher Command) */}
+      {generationMode !== 'scheme' && (
       <div className="form-group" style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <label className="form-label" style={{ marginBottom: 0, fontWeight: 800, color: '#0f2744', fontSize: '0.88rem' }}>
@@ -843,6 +1257,7 @@ export default function TestGeneratorWizard({
           />
         </div>
       </div>
+      )}
 
       {/* AUTO MODE SETTINGS */}
       {generationMode === 'auto' && (
@@ -1082,7 +1497,18 @@ export default function TestGeneratorWizard({
 
       {/* Test Meta Info */}
       <div className="form-group">
-        <label className="form-label">{generationMode === 'auto' ? '6. Test Details' : '5. Test Details'}</label>
+        <label className="form-label">{generationMode === 'manual' ? '5. Test Details' : '6. Test Details'}</label>
+        <div style={{ marginBottom: '8px' }}>
+          <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Test Paper Title</span>
+          <input
+            type="text"
+            className="form-input"
+            value={testTitle}
+            onChange={(e) => setTestTitle(e.target.value)}
+            placeholder="e.g. Midterm Examination 2026"
+            style={{ fontWeight: 600, fontSize: '0.82rem', marginTop: '2px' }}
+          />
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
           <div>
             <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Time Allowed</span>
@@ -1112,10 +1538,25 @@ export default function TestGeneratorWizard({
       <button
         type="button"
         className="btn-primary"
-        style={{ width: '100%', marginTop: '0.5rem', padding: '0.8rem' }}
+        style={{ width: '100%', marginTop: '0.5rem', padding: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
         onClick={handleGenerateClick}
+        disabled={generatingBackend || (generationMode === 'scheme' && (!selectedDivisionId || !selectedSchemeId))}
       >
-        <Sparkles size={18} /> {generationMode === 'auto' ? 'Generate Test Paper' : `Build Paper with ${manualSelectedIds.length} Selected`}
+        {generatingBackend ? (
+          <>
+            <Loader2 size={18} className="animate-spin" /> Generating Test Paper...
+          </>
+        ) : (
+          <>
+            <Sparkles size={18} /> {
+              generationMode === 'scheme'
+                ? `Generate Test Paper (${targetMarks || 0} Marks)`
+                : generationMode === 'auto'
+                ? 'Generate Test Paper'
+                : `Build Paper with ${manualSelectedIds.length} Selected`
+            }
+          </>
+        )}
       </button>
     </div>
   );

@@ -293,6 +293,11 @@ def seed_database(use_sqlite: bool = False):
             )
             db.add_all([sec_a, sec_b, sec_c])
 
+        # 8. Seed Default Admin and Teacher Users
+        from app.auth import seed_default_users
+        seed_default_users(db)
+        print("  + Seeded Default Users: admin@tca.edu.pk (Admin) and teacher@tca.edu.pk (Teacher)")
+
         db.commit()
         print("==================================================")
         print("[Seed] SUCCESS: Database Seed Completed Successfully!")

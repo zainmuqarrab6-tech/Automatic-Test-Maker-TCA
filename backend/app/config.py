@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     # Optional Gemini AI API Key
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
+    # Authentication & Security
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "tca-test-maker-secure-jwt-signing-key-2026-super-secret")
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24)))
+
+    # File Upload Limits
+    MAX_BOOK_UPLOAD_BYTES: int = 25 * 1024 * 1024   # 25 MB
+    MAX_SCHEME_UPLOAD_BYTES: int = 15 * 1024 * 1024  # 15 MB
+
     @property
     def DATABASE_URL(self) -> str:
         env_url = os.getenv("DATABASE_URL")

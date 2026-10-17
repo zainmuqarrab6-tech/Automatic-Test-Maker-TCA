@@ -7,6 +7,7 @@ class GeneratedTest(Base):
     __tablename__ = "generated_tests"
 
     id = Column(String(64), primary_key=True, index=True) # e.g. 'test-1729158000'
+    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True)
     scheme_id = Column(Integer, ForeignKey("paper_schemes.id", ondelete="SET NULL"), nullable=True, index=True)
     syllabus_division_id = Column(Integer, ForeignKey("syllabus_divisions.id", ondelete="SET NULL"), nullable=True, index=True)
 
@@ -18,6 +19,7 @@ class GeneratedTest(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
+    subject = relationship("Subject")
     scheme = relationship("PaperScheme", back_populates="generated_tests")
     syllabus_division = relationship("SyllabusDivision", back_populates="generated_tests")
     questions = relationship("GeneratedTestQuestion", back_populates="test", cascade="all, delete-orphan", order_by="GeneratedTestQuestion.order")

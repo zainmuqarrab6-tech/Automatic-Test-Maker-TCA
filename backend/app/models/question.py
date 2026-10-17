@@ -41,8 +41,8 @@ class Question(Base):
 
     # Workflow Status
     status = Column(
-        Enum("draft", "approved", name="question_status_enum"),
-        default="approved",
+        Enum("draft", "approved", "rejected", name="question_status_enum"),
+        default="draft",
         nullable=False,
         index=True
     )

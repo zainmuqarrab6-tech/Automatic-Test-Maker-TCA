@@ -80,3 +80,21 @@ class QuestionSwapRequest(BaseModel):
     chapter_no: Optional[int] = None
     type: str
     exclude_ids: List[str] = []
+
+class BulkApproveRequest(BaseModel):
+    question_ids: List[str]
+
+class BulkChapterRequest(BaseModel):
+    question_ids: List[str]
+    chapter_id: int
+
+class ChapterQuestionStats(BaseModel):
+    chapter_id: int
+    chapter_number: int
+    name: str
+    name_ur: Optional[str] = None
+    approved_count: int
+    draft_count: int
+    rejected_count: int
+    total_count: int
+

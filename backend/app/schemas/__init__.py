@@ -16,3 +16,11 @@ from app.schemas.scheme import (
     PaperSchemeBase, PaperSchemeCreate, PaperSchemeUpdate, PaperSchemeOut
 )
 from app.schemas.metadata import MetadataResponse, ChapterMetaItem
+from app.schemas.book import (
+    BookBase, BookCreate, BookUpdate, BookOut, BookStatusOut,
+    BookBatchApproveRequest, AIConfigStatusOut
+)
+from app.schemas.user import (
+    UserBase, UserCreate, UserLogin, UserOut, TokenOut, DemoUserOut
+)
+

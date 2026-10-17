@@ -7,6 +7,9 @@ from app.routers.syllabus import router as syllabus_router
 from app.routers.schemes import router as schemes_router
 from app.routers.metadata import router as metadata_router
 from app.routers.health import router as health_router
+from app.routers.books import router as books_router
+from app.routers.tests import router as tests_router
+from app.routers.auth import router as auth_router
 
 __all__ = [
     "classes_router",
@@ -17,5 +20,9 @@ __all__ = [
     "syllabus_router",
     "schemes_router",
     "metadata_router",
-    "health_router"
+    "health_router",
+    "books_router",
+    "tests_router",
+    "auth_router"
 ]
+

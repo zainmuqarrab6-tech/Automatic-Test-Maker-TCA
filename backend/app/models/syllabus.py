@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, Float, String, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -27,6 +27,7 @@ class SyllabusDivisionChapter(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     syllabus_division_id = Column(Integer, ForeignKey("syllabus_divisions.id", ondelete="CASCADE"), nullable=False, index=True)
     chapter_id = Column(Integer, ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, index=True)
+    weightage_percent = Column(Float, nullable=True, default=0.0) # Optional chapter weightage (e.g. 50.0%)
 
     # Relationships
     syllabus_division = relationship("SyllabusDivision", back_populates="chapters")
