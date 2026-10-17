@@ -17,14 +17,7 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Resilient MySQL2 dynamic import: prevents 503 crashes on Hostinger if node_modules are building
 let mysql = null;
-try {
-  const mysqlModule = await import('mysql2/promise');
-  mysql = mysqlModule.default || mysqlModule;
-} catch (err) {
-  console.warn(`[Database] Notice: mysql2 package not loaded (${err.message}). API will run in resilient fallback mode.`);
-}
 
 // Database connection configuration
 const dbConfig = {
@@ -44,8 +37,14 @@ let dbConnected = false;
 
 async function initDatabase() {
   if (!mysql) {
-    dbConnected = false;
-    return;
+    try {
+      const mysqlModule = await import('mysql2/promise');
+      mysql = mysqlModule.default || mysqlModule;
+    } catch (err) {
+      console.warn(`[Database] Notice: mysql2 package not loaded (${err.message}). API will run in resilient fallback mode.`);
+      dbConnected = false;
+      return;
+    }
   }
   try {
     pool = mysql.createPool(dbConfig);
@@ -88,7 +87,7 @@ initDatabase().catch(err => {
   console.warn('[Database] Async init notice:', err.message);
 });
 
-// Serve compiled static assets: dist first, then public
+// Serve compiled static assets: dist, public, and root directory
 const distPath = path.join(__dirname, 'dist');
 const publicPath = path.join(__dirname, 'public');
 
@@ -98,6 +97,22 @@ if (fs.existsSync(distPath)) {
 if (fs.existsSync(publicPath)) {
   app.use(express.static(publicPath));
 }
+app.use(express.static(__dirname));
+
+// Direct root route to immediately serve index.html
+app.get('/', (req, res) => {
+  const candidates = [
+    path.join(__dirname, 'index.html'),
+    path.join(__dirname, 'dist', 'index.html'),
+    path.join(__dirname, 'public', 'index.html')
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      return res.sendFile(p);
+    }
+  }
+  res.status(200).send('<!DOCTYPE html><html><body><h1>The Century Academy</h1><p>Test Maker portal loading...</p></body></html>');
+});
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
@@ -341,36 +356,38 @@ app.delete('/api/questions/:id', async (req, res) => {
 
 // Single Page Application Fallback for Hostinger Web App
 app.use((req, res) => {
-  const distIndex = path.join(__dirname, 'dist', 'index.html');
-  const publicIndex = path.join(__dirname, 'public', 'index.html');
-  if (fs.existsSync(distIndex)) {
-    res.sendFile(distIndex);
-  } else if (fs.existsSync(publicIndex)) {
-    res.sendFile(publicIndex);
-  } else {
-    res.status(200).send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>The Century Academy Test Maker</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f2744; color: white; text-align: center; }
-          .card { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 2.5rem; border-radius: 14px; max-width: 480px; }
-          h2 { margin: 0 0 0.5rem 0; color: #38bdf8; font-size: 1.5rem; }
-          p { color: #cbd5e1; font-size: 0.95rem; line-height: 1.5; margin: 0; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h2>The Century Academy</h2>
-          <p>Test Maker portal is currently building and initializing. Please refresh in a few moments.</p>
-        </div>
-      </body>
-      </html>
-    `);
+  const candidates = [
+    path.join(__dirname, 'index.html'),
+    path.join(__dirname, 'dist', 'index.html'),
+    path.join(__dirname, 'public', 'index.html')
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      return res.sendFile(p);
+    }
   }
+  res.status(200).send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>The Century Academy Test Maker</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f2744; color: white; text-align: center; }
+        .card { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 2.5rem; border-radius: 14px; max-width: 480px; }
+        h2 { margin: 0 0 0.5rem 0; color: #38bdf8; font-size: 1.5rem; }
+        p { color: #cbd5e1; font-size: 0.95rem; line-height: 1.5; margin: 0; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h2>The Century Academy</h2>
+        <p>Test Maker portal is currently building and initializing. Please refresh in a few moments.</p>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
 // Global process safety handlers to prevent Hostinger 503 crash on unhandled errors
@@ -381,12 +398,9 @@ process.on('unhandledRejection', (reason) => {
   console.error('[Hostinger Process] unhandledRejection caught:', reason);
 });
 
-if (typeof PORT === 'string' && isNaN(Number(PORT))) {
-  app.listen(PORT, () => {
-    console.log(`[Hostinger Web App] The Century Academy Test Maker Server running on socket ${PORT}`);
-  });
-} else {
-  app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`[Hostinger Web App] The Century Academy Test Maker Server running on 0.0.0.0:${PORT}`);
-  });
-}
+// Flexible listening for Hostinger (supports both Passenger socket and TCP port)
+const serverPort = process.env.PORT || 3000;
+app.listen(serverPort, () => {
+  console.log(`[Hostinger Web App] The Century Academy Test Maker Server running on ${serverPort}`);
+});
+
