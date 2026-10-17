@@ -4,13 +4,16 @@ DirectoryIndex index.html index.php
   RewriteEngine On
   RewriteBase /
 
+  # Serve favicon directly to prevent 503 proxy errors
+  RewriteRule ^favicon\.ico$ favicon.ico [L]
+
   # Serve real physical files and directories directly
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
   # Allow Node.js API endpoints and PHP API to pass through
-  RewriteRule ^(api/|api\.php) - [L]
+  RewriteRule ^(api/|api\.php|public/api\.php) - [L]
 
   # Serve index.html directly for root requests to bypass proxy 503
   RewriteRule ^$ index.html [L]

@@ -4,6 +4,9 @@ DirectoryIndex index.html index.php
   RewriteEngine On
   RewriteBase /
 
+  # Serve favicon directly to prevent 503 proxy errors
+  RewriteRule ^favicon\.ico$ favicon.ico [L]
+
   # Serve real physical files and directories directly
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
