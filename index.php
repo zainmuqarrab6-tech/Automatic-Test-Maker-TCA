@@ -4,10 +4,15 @@
  * Serves the compiled production React application if requested via Apache / LiteSpeed / PHP
  */
 
+$rootIndex = __DIR__ . '/index.html';
 $distIndex = __DIR__ . '/dist/index.html';
 $publicIndex = __DIR__ . '/public/index.html';
 
-if (file_exists($distIndex)) {
+if (file_exists($rootIndex)) {
+    header('Content-Type: text/html; charset=utf-8');
+    readfile($rootIndex);
+    exit();
+} elseif (file_exists($distIndex)) {
     header('Content-Type: text/html; charset=utf-8');
     readfile($distIndex);
     exit();
