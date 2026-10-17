@@ -1,24 +1,24 @@
-DirectoryIndex index.html index.php
+DirectoryIndex index.php index.html
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
 
-  # 1. Immediately route root / to index.html (Bypasses LiteSpeed Node.js 503 proxy)
-  RewriteRule ^$ index.html [L]
+  # 1. Route root / to index.php (handled by PHP 8.3, bypasses Hostinger Node 503 proxy)
+  RewriteRule ^$ index.php [L]
 
   # 2. Serve favicon directly
   RewriteRule ^favicon\.ico$ favicon.ico [L]
 
-  # 3. Serve real physical files directly
+  # 3. Serve real physical files directly (CSS, JS, images)
   RewriteCond %{REQUEST_FILENAME} -f
   RewriteRule ^ - [L]
 
   # 4. Allow PHP API endpoints to pass through
   RewriteRule ^(api\.php|public/api\.php) - [L]
 
-  # 5. SPA fallback for all non-file client routes
+  # 5. SPA fallback for all non-file client routes to index.php
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^.*$ index.html [L]
+  RewriteRule ^.*$ index.php [L]
 </IfModule>
