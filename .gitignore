@@ -4,6 +4,9 @@ hostinger-web-app.zip
 Thumbs.db
 *.log
 *.pdf
+*.db
+__pycache__/
+*.pyc
 9th-Mathematics-New-Syllabus-Full-Book-PDF.pdf
 .env
 .env*.local

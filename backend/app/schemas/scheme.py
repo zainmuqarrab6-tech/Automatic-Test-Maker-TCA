@@ -1,0 +1,62 @@
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, field_validator
+
+class SchemeSectionBase(BaseModel):
+    section_name: str # e.g. "Section A", "Section B", "Section C"
+    question_type: str # 'mcq', 'short', 'long', 'fill_blank', 'true_false', 'matching'
+    number_of_questions: int
+    number_to_attempt: int
+    marks_per_question: int
+    difficulty_mix: Optional[Dict[str, Any]] = None
+
+    @field_validator('question_type')
+    @classmethod
+    def normalize_section_type(cls, v: str) -> str:
+        v_lower = v.lower()
+        if "short" in v_lower:
+            return "short"
+        if "long" in v_lower:
+            return "long"
+        return v_lower
+
+class SchemeSectionCreate(SchemeSectionBase):
+    pass
+
+class SchemeSectionUpdate(BaseModel):
+    section_name: Optional[str] = None
+    question_type: Optional[str] = None
+    number_of_questions: Optional[int] = None
+    number_to_attempt: Optional[int] = None
+    marks_per_question: Optional[int] = None
+    difficulty_mix: Optional[Dict[str, Any]] = None
+
+class SchemeSectionOut(SchemeSectionBase):
+    id: int
+    scheme_id: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PaperSchemeBase(BaseModel):
+    subject_id: int
+    name: str # e.g. "Punjab Board 9th Mathematics Scheme 2026"
+    total_marks: int
+    duration_minutes: int
+    instructions: Optional[str] = None
+
+class PaperSchemeCreate(PaperSchemeBase):
+    sections: Optional[List[SchemeSectionCreate]] = []
+
+class PaperSchemeUpdate(BaseModel):
+    subject_id: Optional[int] = None
+    name: Optional[str] = None
+    total_marks: Optional[int] = None
+    duration_minutes: Optional[int] = None
+    instructions: Optional[str] = None
+
+class PaperSchemeOut(PaperSchemeBase):
+    id: int
+    created_at: datetime
+    sections: List[SchemeSectionOut] = []
+    model_config = ConfigDict(from_attributes=True)

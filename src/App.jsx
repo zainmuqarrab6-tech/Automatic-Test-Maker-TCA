@@ -14,26 +14,43 @@ import LiveTestPaper from './components/LiveTestPaper';
 import { exportTestPaperToWord } from './utils/exportToWord';
 
 export default function App() {
-  // Central Question Bank in memory (Loaded dynamically from MySQL / API)
+  // Central Question Bank in memory (Loaded dynamically from FastAPI / MySQL)
   const [questionBank, setQuestionBank] = useState(INITIAL_QUESTION_BANK);
+  const [backendMetadata, setBackendMetadata] = useState(null);
 
   // Live Database Connection State
   const [dbStatus, setDbStatus] = useState('checking'); // 'connected' | 'offline'
-  const [dbMessage, setDbMessage] = useState('Connecting to MySQL...');
+  const [dbMessage, setDbMessage] = useState('Connecting to MySQL (FastAPI)...');
   const [loadingDb, setLoadingDb] = useState(false);
 
-  // Load questions dynamically from online MySQL / API
+  // Load questions and metadata dynamically from FastAPI / MySQL backend
   const loadDatabaseQuestions = async () => {
     setLoadingDb(true);
     setDbStatus('checking');
     try {
-      let res = null;
-      // 1. Hostinger Express endpoint
+      // 1. Fetch metadata (Classes, Subjects, Chapters)
       try {
-        res = await fetch('/api/questions', { cache: 'no-store' });
+        const metaRes = await fetch('/api/v1/metadata', { cache: 'no-store' });
+        if (metaRes.ok) {
+          const metaJson = await metaRes.json();
+          setBackendMetadata(metaJson);
+        }
+      } catch (e) {
+        console.warn('Metadata fetch notice:', e.message);
+      }
+
+      // 2. Fetch questions from FastAPI backend
+      let res = null;
+      try {
+        res = await fetch('/api/v1/questions?limit=500', { cache: 'no-store' });
       } catch (e) {}
 
-      // 2. Fallback to PHP API on Apache/LiteSpeed
+      // Fallback to top-level /api/questions or PHP
+      if (!res || !res.ok) {
+        try {
+          res = await fetch('/api/questions', { cache: 'no-store' });
+        } catch (e) {}
+      }
       if (!res || !res.ok) {
         try {
           res = await fetch('/api.php?action=get_questions', { cache: 'no-store' });
@@ -46,7 +63,7 @@ export default function App() {
         if (Array.isArray(serverQuestions)) {
           setQuestionBank(serverQuestions);
           setDbStatus('connected');
-          setDbMessage(`Live MySQL: Connected (${serverQuestions.length} Questions)`);
+          setDbMessage(`FastAPI + MySQL: Connected (${serverQuestions.length} Questions)`);
           setLoadingDb(false);
           return;
         }
@@ -56,7 +73,7 @@ export default function App() {
     }
 
     setDbStatus('offline');
-    setDbMessage('MySQL Live (0 Questions / Ready)');
+    setDbMessage('MySQL / FastAPI (Offline / Checking)');
     setLoadingDb(false);
   };
 
@@ -268,22 +285,49 @@ export default function App() {
     });
   };
 
-  // Swap question on paper with another from bank
-  const handleSwapQuestion = (type, index, currentQuestion) => {
+  // Swap question on paper with another from FastAPI backend or local pool
+  const handleSwapQuestion = async (type, index, currentQuestion) => {
     if (!paperData) return;
 
+    const currentList = type === 'mcq' ? paperData.mcqs : type === 'short' ? paperData.shortQuestions : paperData.longQuestions;
+    const currentIds = Array.from(new Set(currentList.map(q => q.id)));
+
+    // Try backend swap first
+    try {
+      const res = await fetch('/api/v1/questions/swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          class_name: paperData.className,
+          subject_name: paperData.subject,
+          chapter_no: currentQuestion?.chapter_no || 1,
+          type: type === 'mcq' ? 'mcq' : type === 'short' ? 'short' : 'long',
+          exclude_ids: currentIds
+        })
+      });
+      if (res.ok) {
+        const replacement = await res.json();
+        const updatedList = [...currentList];
+        updatedList[index] = replacement;
+        if (type === 'mcq') setPaperData({ ...paperData, mcqs: updatedList });
+        else if (type === 'short') setPaperData({ ...paperData, shortQuestions: updatedList });
+        else setPaperData({ ...paperData, longQuestions: updatedList });
+        return;
+      }
+    } catch (err) {
+      console.warn('Backend swap fallback to local memory pool:', err.message);
+    }
+
+    // Local pool fallback
     const pool = questionBank.filter(
-      q => q.class === paperData.className &&
-           q.subject === paperData.subject &&
-           (type === 'mcq' ? q.type === 'mcq' : type === 'short' ? q.type === 'short_question' : q.type === 'long_question')
+      q => (q.class === paperData.className || q.class_name === paperData.className) &&
+           (q.subject === paperData.subject || q.subject_name === paperData.subject) &&
+           (type === 'mcq' ? q.type === 'mcq' : type === 'short' ? (q.type === 'short' || q.type === 'short_question') : (q.type === 'long' || q.type === 'long_question'))
     );
 
-    const currentList = type === 'mcq' ? paperData.mcqs : type === 'short' ? paperData.shortQuestions : paperData.longQuestions;
-    const currentIds = new Set(currentList.map(q => q.id));
-
-    let candidates = pool.filter(q => !currentIds.has(q.id) && q.chapter_no === currentQuestion?.chapter_no);
+    let candidates = pool.filter(q => !currentIds.includes(q.id) && q.chapter_no === currentQuestion?.chapter_no);
     if (candidates.length === 0) {
-      candidates = pool.filter(q => !currentIds.has(q.id));
+      candidates = pool.filter(q => !currentIds.includes(q.id));
     }
 
     if (candidates.length === 0) {
@@ -319,8 +363,8 @@ export default function App() {
     }
   };
 
-  // Inline edit question on paper
-  const handleEditQuestion = (type, index, updatedQuestion) => {
+  // Inline edit question on paper and persist to backend
+  const handleEditQuestion = async (type, index, updatedQuestion) => {
     if (!paperData) return;
     const currentList = type === 'mcq' ? paperData.mcqs : type === 'short' ? paperData.shortQuestions : paperData.longQuestions;
     const updated = [...currentList];
@@ -329,6 +373,25 @@ export default function App() {
     if (type === 'mcq') setPaperData({ ...paperData, mcqs: updated });
     else if (type === 'short') setPaperData({ ...paperData, shortQuestions: updated });
     else setPaperData({ ...paperData, longQuestions: updated });
+
+    // Persist to FastAPI backend if real database ID
+    if (updatedQuestion.id && !updatedQuestion.id.startsWith('dyn-') && !updatedQuestion.id.startsWith('custom-')) {
+      try {
+        await fetch(`/api/v1/questions/${updatedQuestion.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question_text: updatedQuestion.question_text || updatedQuestion.question_en,
+            question_ur: updatedQuestion.question_ur,
+            options: updatedQuestion.options,
+            correct_answer: updatedQuestion.correct_option_index !== undefined ? String(updatedQuestion.correct_option_index) : undefined,
+            marks: updatedQuestion.marks
+          })
+        });
+      } catch (e) {
+        console.warn('Persist edit notice:', e.message);
+      }
+    }
   };
 
   // Add custom question directly to paper
@@ -476,6 +539,7 @@ export default function App() {
               setSelectedClass={setSelectedClass}
               selectedSubject={selectedSubject}
               setSelectedSubject={setSelectedSubject}
+              backendMetadata={backendMetadata}
             />
           </div>
 

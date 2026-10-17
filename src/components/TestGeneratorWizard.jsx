@@ -11,7 +11,8 @@ export default function TestGeneratorWizard({
   selectedClass,
   setSelectedClass,
   selectedSubject,
-  setSelectedSubject
+  setSelectedSubject,
+  backendMetadata = null
 }) {
   const [generationMode, setGenerationMode] = useState('auto'); // 'auto' | 'manual'
   
@@ -48,12 +49,46 @@ export default function TestGeneratorWizard({
   const [manualTypeFilter, setManualTypeFilter] = useState('all'); // 'all' | 'mcq' | 'short_question' | 'long_question'
   const [manualSearchQuery, setManualSearchQuery] = useState('');
 
-  // Dynamically extract available chapters from the database question bank
+  // Dynamically resolve classes from backend metadata or fallback
+  const dynamicClasses = useMemo(() => {
+    if (backendMetadata?.classes?.length) {
+      return backendMetadata.classes.map(c => c.name);
+    }
+    return AVAILABLE_CLASSES;
+  }, [backendMetadata]);
+
+  // Dynamically resolve subjects for current class from backend metadata or fallback
+  const dynamicSubjects = useMemo(() => {
+    if (backendMetadata?.classes?.length) {
+      const clsObj = backendMetadata.classes.find(c => c.name === selectedClass);
+      if (clsObj && clsObj.subjects?.length) {
+        return clsObj.subjects.map(s => s.name);
+      }
+    }
+    return AVAILABLE_SUBJECTS[selectedClass] || [];
+  }, [backendMetadata, selectedClass]);
+
+  // Dynamically extract available chapters from the database metadata or question bank
   const availableChapters = useMemo(() => {
+    // 1. If backend metadata has chapters for this class and subject, use them
+    if (backendMetadata?.classes?.length) {
+      const clsObj = backendMetadata.classes.find(c => c.name === selectedClass);
+      const subjObj = clsObj?.subjects?.find(s => s.name === selectedSubject);
+      if (subjObj?.chapters?.length) {
+        return subjObj.chapters.map(ch => ({
+          no: ch.chapter_number,
+          title_en: ch.name_en || `Unit ${ch.chapter_number}`,
+          title_ur: ch.name_ur || `یونٹ ${ch.chapter_number}`
+        })).sort((a, b) => a.no - b.no);
+      }
+    }
+
+    // 2. Otherwise extract from loaded question bank
     const list = [];
     const seen = new Set();
     questionBank
-      .filter(q => q.class === selectedClass && q.subject === selectedSubject)
+      .filter(q => (q.class === selectedClass || q.class_name === selectedClass) && 
+                   (q.subject === selectedSubject || q.subject_name === selectedSubject))
       .forEach(q => {
         if (!seen.has(q.chapter_no)) {
           seen.add(q.chapter_no);
@@ -65,7 +100,7 @@ export default function TestGeneratorWizard({
         }
       });
 
-    // If database currently has no questions for this subject, provide dynamic units 1 to 10
+    // 3. Fallback if empty
     if (list.length === 0) {
       for (let i = 1; i <= 10; i++) {
         list.push({
@@ -77,7 +112,7 @@ export default function TestGeneratorWizard({
     }
 
     return list.sort((a, b) => a.no - b.no);
-  }, [questionBank, selectedClass, selectedSubject]);
+  }, [backendMetadata, questionBank, selectedClass, selectedSubject]);
 
   // Auto-sync selected chapters when class or subject changes
   React.useEffect(() => {
@@ -385,12 +420,20 @@ export default function TestGeneratorWizard({
           className="form-select"
           value={selectedClass}
           onChange={(e) => {
-            setSelectedClass(e.target.value);
-            const subs = AVAILABLE_SUBJECTS[e.target.value] || [];
-            setSelectedSubject(subs.includes("Mathematics") ? "Mathematics" : subs[0]);
+            const nextClass = e.target.value;
+            setSelectedClass(nextClass);
+            let nextSubs = [];
+            if (backendMetadata?.classes?.length) {
+              const cObj = backendMetadata.classes.find(c => c.name === nextClass);
+              if (cObj?.subjects?.length) nextSubs = cObj.subjects.map(s => s.name);
+            }
+            if (nextSubs.length === 0) {
+              nextSubs = AVAILABLE_SUBJECTS[nextClass] || [];
+            }
+            setSelectedSubject(nextSubs.includes("Mathematics") ? "Mathematics" : (nextSubs[0] || ""));
           }}
         >
-          {AVAILABLE_CLASSES.map(cls => (
+          {dynamicClasses.map(cls => (
             <option key={cls} value={cls}>Class {cls}</option>
           ))}
         </select>
@@ -404,7 +447,7 @@ export default function TestGeneratorWizard({
           value={selectedSubject}
           onChange={(e) => setSelectedSubject(e.target.value)}
         >
-          {(AVAILABLE_SUBJECTS[selectedClass] || []).map(sub => (
+          {dynamicSubjects.map(sub => (
             <option key={sub} value={sub}>{sub}</option>
           ))}
         </select>
@@ -746,6 +789,42 @@ export default function TestGeneratorWizard({
           </div>
         )}
 
+        {/* Database Syllabus Divisions */}
+        {backendMetadata?.syllabus_divisions?.length > 0 && (
+          <div style={{ marginTop: '8px', marginBottom: '4px' }}>
+            <div style={{ fontSize: '0.68rem', color: '#475569', marginBottom: '3px', fontWeight: 700 }}>
+              Syllabus Divisions (امتحانی دورانیہ):
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {backendMetadata.syllabus_divisions.map(div => (
+                <button
+                  key={div.id}
+                  type="button"
+                  onClick={() => {
+                    if (div.chapter_ids && div.chapter_ids.length > 0) {
+                      setSelectedChapters(div.chapter_ids);
+                    }
+                    setCustomSyllabusLabel(div.name);
+                  }}
+                  style={{
+                    fontSize: '0.68rem',
+                    padding: '3px 7px',
+                    borderRadius: '4px',
+                    background: '#f1f5f9',
+                    border: '1px solid #cbd5e1',
+                    cursor: 'pointer',
+                    color: '#0f2744',
+                    fontWeight: 600
+                  }}
+                  title={div.description || div.name}
+                >
+                  📌 {div.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* UNIVERSAL TEST SYLLABUS EDITABLE PREVIEW (Printed on Student Paper) */}
         <div style={{ marginTop: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '8px 10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
@@ -770,7 +849,47 @@ export default function TestGeneratorWizard({
         <>
           {/* Preset Marks */}
           <div className="form-group">
-            <label className="form-label">4. Total Marks Target</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="form-label" style={{ marginBottom: '4px' }}>4. Total Marks Target</label>
+            </div>
+
+            {/* Standard Board Schemes from Database */}
+            {backendMetadata?.schemes?.length > 0 && (
+              <div style={{ marginBottom: '6px' }}>
+                <div style={{ fontSize: '0.68rem', color: '#64748b', marginBottom: '3px', fontWeight: 700 }}>
+                  Board Paper Schemes:
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                  {backendMetadata.schemes.map(sch => (
+                    <button
+                      key={sch.id}
+                      type="button"
+                      onClick={() => {
+                        handlePresetMarks(sch.total_marks);
+                        if (sch.duration_minutes) {
+                          setTimeAllowed(`${sch.duration_minutes} Mins`);
+                        }
+                        setTestTitle(sch.name);
+                      }}
+                      style={{
+                        fontSize: '0.7rem',
+                        padding: '3px 7px',
+                        borderRadius: '4px',
+                        background: targetMarks === sch.total_marks ? '#dbeafe' : '#f8fafc',
+                        border: targetMarks === sch.total_marks ? '1px solid #3b82f6' : '1px solid #cbd5e1',
+                        cursor: 'pointer',
+                        color: targetMarks === sch.total_marks ? '#1d4ed8' : '#334155',
+                        fontWeight: 700
+                      }}
+                      title={`${sch.name} (${sch.total_marks} Marks, ${sch.duration_minutes}m)`}
+                    >
+                      📋 {sch.name} ({sch.total_marks}M)
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="preset-pills-row">
               {[15, 20, 25, 35, 50, 75].map(m => (
                 <button
