@@ -105,6 +105,7 @@ export default function LiveTestPaper({
     campus = "Sargodha Road Campus",
     className = "9th",
     subject = "Mathematics",
+    syllabus = "Full Chapter",
     date = new Date().toISOString().split('T')[0],
     timeAllowed = "45 Mins",
     mcqs = [],
@@ -265,6 +266,22 @@ export default function LiveTestPaper({
                 onBlur={(e) => onUpdateMeta && onUpdateMeta('timeAllowed', e.currentTarget.textContent.trim())}
               >
                 &nbsp;{timeAllowed}
+              </span>
+            </div>
+
+            <div className="meta-field" style={{ gridColumn: 'span 4', display: 'flex', alignItems: 'center', background: '#f8fafc', padding: '3px 8px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+              <span className="meta-label" style={{ fontWeight: 800, color: '#0f2744', minWidth: '130px' }}>
+                Syllabus / نصاب:
+              </span>
+              <span 
+                className="meta-line editable-text-field"
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => onUpdateMeta && onUpdateMeta('syllabus', e.currentTarget.textContent.trim())}
+                title="Click to edit test syllabus / دائرہ کار"
+                style={{ fontWeight: 700, color: '#0369a1', width: '100%', fontSize: '0.88rem' }}
+              >
+                &nbsp;{syllabus || "Full Chapter"}
               </span>
             </div>
 

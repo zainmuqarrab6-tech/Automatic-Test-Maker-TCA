@@ -13,6 +13,7 @@ export function exportTestPaperToWord(paperData, options = {}) {
     campus = "Sargodha Road Campus",
     className = "9th",
     subject = "Mathematics",
+    syllabus = "Full Chapter",
     date = new Date().toISOString().split('T')[0],
     timeAllowed = "45 Mins",
     mcqs = [],
@@ -94,8 +95,19 @@ export function exportTestPaperToWord(paperData, options = {}) {
 <![endif]-->
 <style>
   @page {
-    size: A4 portrait;
-    margin: 1.5cm 1.5cm 1.5cm 1.5cm;
+    size: 21.0cm 29.7cm; /* Strict A4 */
+    margin: 1.2cm 1.2cm 1.2cm 1.2cm;
+    mso-page-orientation: portrait;
+  }
+  @page Section1 {
+    size: 595.3pt 841.9pt; /* Standard A4 in Word Points */
+    margin: 34.0pt 36.0pt 34.0pt 36.0pt;
+    mso-header-margin: 18.0pt;
+    mso-footer-margin: 18.0pt;
+    mso-paper-source: 0;
+  }
+  div.Section1 {
+    page: Section1;
   }
   body {
     font-family: 'Times New Roman', 'Noto Nastaliq Urdu', 'Arial', serif;
@@ -207,6 +219,7 @@ export function exportTestPaperToWord(paperData, options = {}) {
 </style>
 </head>
 <body>
+<div class="Section1">
 
 <!-- Header Table -->
 <table class="header-table" style="border-bottom: 2px solid #0c2340; padding-bottom: 6px;">
@@ -240,6 +253,9 @@ export function exportTestPaperToWord(paperData, options = {}) {
     <td><span class="meta-label">Class:</span> <b>${className} Class</b> &nbsp;&nbsp;|&nbsp;&nbsp; <span class="meta-label">Subject:</span> <b>${subject}</b></td>
     <td><span class="meta-label">Date:</span> ${date}</td>
     <td><span class="meta-label">Time:</span> ${timeAllowed}</td>
+  </tr>
+  <tr>
+    <td colspan="3" style="background-color: #f8fafc;"><span class="meta-label">Syllabus / دائرہ کار:</span> <b>${syllabus || 'Full Syllabus'}</b></td>
   </tr>
   <tr>
     <td colspan="2"><span class="meta-label">Total Marks:</span> <b>${totalMarks}</b></td>
@@ -347,6 +363,7 @@ export function exportTestPaperToWord(paperData, options = {}) {
   </tr>
 </table>
 
+</div>
 </body>
 </html>
 `;

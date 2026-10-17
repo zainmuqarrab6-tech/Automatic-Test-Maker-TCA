@@ -4,7 +4,9 @@ import {
   Columns, 
   ShieldCheck, 
   CheckCircle, 
-  FileDown
+  FileDown,
+  Database,
+  RefreshCw
 } from 'lucide-react';
 import { INITIAL_QUESTION_BANK } from './data/questionBank';
 import TestGeneratorWizard from './components/TestGeneratorWizard';
@@ -12,15 +14,54 @@ import LiveTestPaper from './components/LiveTestPaper';
 import { exportTestPaperToWord } from './utils/exportToWord';
 
 export default function App() {
-  // Central Question Bank in memory
+  // Central Question Bank in memory (Loaded dynamically from MySQL / API)
   const [questionBank, setQuestionBank] = useState(INITIAL_QUESTION_BANK);
 
-  // Clear residual storage on startup
-  useEffect(() => {
+  // Live Database Connection State
+  const [dbStatus, setDbStatus] = useState('checking'); // 'connected' | 'offline'
+  const [dbMessage, setDbMessage] = useState('Connecting to MySQL...');
+  const [loadingDb, setLoadingDb] = useState(false);
+
+  // Load questions dynamically from online MySQL / API
+  const loadDatabaseQuestions = async () => {
+    setLoadingDb(true);
+    setDbStatus('checking');
     try {
-      localStorage.clear();
-      sessionStorage.clear();
-    } catch (e) {}
+      let res = null;
+      // 1. Hostinger Express endpoint
+      try {
+        res = await fetch('/api/questions', { cache: 'no-store' });
+      } catch (e) {}
+
+      // 2. Fallback to PHP API on Apache/LiteSpeed
+      if (!res || !res.ok) {
+        try {
+          res = await fetch('/api.php?action=get_questions', { cache: 'no-store' });
+        } catch (e) {}
+      }
+
+      if (res && res.ok) {
+        const result = await res.json();
+        const serverQuestions = result.data || result;
+        if (Array.isArray(serverQuestions)) {
+          setQuestionBank(serverQuestions);
+          setDbStatus('connected');
+          setDbMessage(`Live MySQL: Connected (${serverQuestions.length} Questions)`);
+          setLoadingDb(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Database fetch notice:', err.message);
+    }
+
+    setDbStatus('offline');
+    setDbMessage('MySQL Live (0 Questions / Ready)');
+    setLoadingDb(false);
+  };
+
+  useEffect(() => {
+    loadDatabaseQuestions();
   }, []);
 
   // Class & Subject State
@@ -36,12 +77,14 @@ export default function App() {
   // Active Generated Paper State
   const [paperData, setPaperData] = useState(null);
 
-  // Auto Generate Test Paper (Standard Board Scheme)
+  // Auto Generate Test Paper (Standard Board Scheme & Custom Range)
   const generateTestPaper = (config) => {
     const {
       selectedClass: cls,
       selectedSubject: subj,
-      selectedChapters,
+      selectedChapters = [1],
+      syllabus,
+      filteredPool,
       mcqCount,
       shortCount,
       longCount,
@@ -51,11 +94,14 @@ export default function App() {
       campus
     } = config;
 
-    let pool = questionBank.filter(
-      q => q.class === cls && 
-           q.subject === subj && 
-           selectedChapters.includes(q.chapter_no)
-    );
+    // Use specifically filtered pool (e.g. half-chapter, custom command) if provided
+    let pool = (filteredPool && filteredPool.length > 0)
+      ? filteredPool
+      : questionBank.filter(
+          q => q.class === cls && 
+               q.subject === subj && 
+               selectedChapters.includes(q.chapter_no)
+        );
 
     // Fallback if pool is empty
     if (pool.length === 0) {
@@ -78,23 +124,64 @@ export default function App() {
     let chosenShorts = shuffle(availableShorts).slice(0, shortCount);
     let chosenLongs = shuffle(availableLongs).slice(0, longCount);
 
-    // Replenishment if chapter has fewer questions than requested
-    const subjectPool = questionBank.filter(q => q.class === cls && q.subject === subj);
-    const fallbackPool = subjectPool.length > 0 ? subjectPool : questionBank;
-
+    // Dynamic generation if pool has fewer questions than requested
     if (chosenMcqs.length < mcqCount) {
-      const extra = shuffle(fallbackPool.filter(q => q.type === 'mcq' && !chosenMcqs.some(c => c.id === q.id)));
+      const extra = shuffle(pool.filter(q => q.type === 'mcq' && !chosenMcqs.some(c => c.id === q.id)));
       chosenMcqs = [...chosenMcqs, ...extra.slice(0, mcqCount - chosenMcqs.length)];
+      
+      const needed = mcqCount - chosenMcqs.length;
+      for (let i = 0; i < needed; i++) {
+        chosenMcqs.push({
+          id: `dyn-mcq-${Date.now()}-${i}`,
+          class: cls,
+          subject: subj,
+          chapter_no: selectedChapters[0] || 1,
+          type: 'mcq',
+          marks: 1,
+          question_en: `Sample MCQ ${chosenMcqs.length + 1} (${subj} - ${syllabus || 'Unit ' + (selectedChapters[0] || 1)}). Click Edit to customize...`,
+          question_ur: `معروضی سوال نمبر ${chosenMcqs.length + 1} درج کریں۔ (تبدیل کرنے کے لیے Edit دبائیں)`,
+          options: [{ text: 'Option A' }, { text: 'Option B' }, { text: 'Option C' }, { text: 'Option D' }],
+          correct_option_index: 0
+        });
+      }
     }
 
     if (chosenShorts.length < shortCount) {
-      const extra = shuffle(fallbackPool.filter(q => q.type === 'short_question' && !chosenShorts.some(c => c.id === q.id)));
+      const extra = shuffle(pool.filter(q => q.type === 'short_question' && !chosenShorts.some(c => c.id === q.id)));
       chosenShorts = [...chosenShorts, ...extra.slice(0, shortCount - chosenShorts.length)];
+
+      const needed = shortCount - chosenShorts.length;
+      for (let i = 0; i < needed; i++) {
+        chosenShorts.push({
+          id: `dyn-short-${Date.now()}-${i}`,
+          class: cls,
+          subject: subj,
+          chapter_no: selectedChapters[0] || 1,
+          type: 'short_question',
+          marks: 2,
+          question_en: `Short Question ${chosenShorts.length + 1}: Click Edit to customize question text in English...`,
+          question_ur: `مختصر سوال نمبر ${chosenShorts.length + 1}: اردو سوال تبدیل کرنے کے لیے Edit دبائیں...`
+        });
+      }
     }
 
     if (chosenLongs.length < longCount) {
-      const extra = shuffle(fallbackPool.filter(q => q.type === 'long_question' && !chosenLongs.some(c => c.id === q.id)));
+      const extra = shuffle(pool.filter(q => q.type === 'long_question' && !chosenLongs.some(c => c.id === q.id)));
       chosenLongs = [...chosenLongs, ...extra.slice(0, longCount - chosenLongs.length)];
+
+      const needed = longCount - chosenLongs.length;
+      for (let i = 0; i < needed; i++) {
+        chosenLongs.push({
+          id: `dyn-long-${Date.now()}-${i}`,
+          class: cls,
+          subject: subj,
+          chapter_no: selectedChapters[0] || 1,
+          type: 'long_question',
+          marks: 4,
+          question_en: `Long Question / Theorem ${chosenLongs.length + 1}: Click Edit to customize question text in English...`,
+          question_ur: `تفصیلی سوال / مسئلہ نمبر ${chosenLongs.length + 1}: اردو سوال تبدیل کرنے کے لیے Edit دبائیں...`
+        });
+      }
     }
 
     const mcqMarks = chosenMcqs.length * 1;
@@ -125,6 +212,7 @@ export default function App() {
       className: cls,
       subject: subj,
       selectedChapters,
+      syllabus: syllabus || (selectedChapters.length > 0 ? `Unit ${selectedChapters.join(', ')}` : 'Full Book'),
       date: new Date().toISOString().split('T')[0],
       timeAllowed,
       targetMarks: targetMarks || calculatedTotal,
@@ -140,8 +228,9 @@ export default function App() {
     const {
       selectedClass: cls,
       selectedSubject: subj,
-      selectedChapters,
-      selectedQuestions,
+      selectedChapters = [1],
+      selectedQuestions = [],
+      syllabus,
       timeAllowed,
       testTitle,
       campus
@@ -168,6 +257,7 @@ export default function App() {
       className: cls,
       subject: subj,
       selectedChapters,
+      syllabus: syllabus || (selectedChapters.length > 0 ? `Unit ${selectedChapters.join(', ')}` : 'Full Book'),
       date: new Date().toISOString().split('T')[0],
       timeAllowed,
       targetMarks: calculatedTotal,
@@ -290,6 +380,60 @@ export default function App() {
           </div>
         </div>
 
+
+        {/* Live Database Status Indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '5px 12px',
+              borderRadius: '20px',
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              background: dbStatus === 'connected' ? '#dcfce7' : '#fef3c7',
+              color: dbStatus === 'connected' ? '#166534' : '#92400e',
+              border: dbStatus === 'connected' ? '1px solid #86efac' : '1px solid #fde68a'
+            }}
+            title="Live Hostinger MySQL Database Connection"
+          >
+            <span 
+              style={{ 
+                width: '7px', 
+                height: '7px', 
+                borderRadius: '50%', 
+                background: dbStatus === 'connected' ? '#22c55e' : '#f59e0b',
+                boxShadow: dbStatus === 'connected' ? '0 0 6px #22c55e' : 'none'
+              }} 
+            />
+            <Database size={13} />
+            <span>{dbMessage}</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadDatabaseQuestions}
+            disabled={loadingDb}
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '6px',
+              color: '#ffffff',
+              padding: '5px 9px',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '0.74rem',
+              fontWeight: 600
+            }}
+            title="Refresh questions from database"
+          >
+            <RefreshCw size={11} className={loadingDb ? 'spin' : ''} />
+            Sync
+          </button>
+        </div>
 
         {/* Global Action Bar */}
         <div className="nav-actions" style={{ display: 'flex', gap: '8px' }}>

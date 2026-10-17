@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Sparkles, Sliders, Layers, CheckSquare, Square, Check, Search, Filter, BookOpen } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { AVAILABLE_CLASSES, AVAILABLE_SUBJECTS, CURRICULUM_CHAPTERS_MAP } from '../data/questionBank';
+import { AVAILABLE_CLASSES, AVAILABLE_SUBJECTS } from '../data/questionBank';
 import MathRenderer from './MathRenderer';
 
 export default function TestGeneratorWizard({
@@ -14,7 +14,27 @@ export default function TestGeneratorWizard({
   setSelectedSubject
 }) {
   const [generationMode, setGenerationMode] = useState('auto'); // 'auto' | 'manual'
+  
+  // Syllabus & Chapter Range Selection Mode
+  // 'full_chapter' | 'half_chapter' | 'page_range' | 'custom_command'
+  const [rangeMode, setRangeMode] = useState('full_chapter');
   const [selectedChapters, setSelectedChapters] = useState([1]);
+  
+  // Half Chapter Mode
+  const [halfChapterNo, setHalfChapterNo] = useState(1);
+  const [halfType, setHalfType] = useState('first_half'); // 'first_half' | 'second_half'
+
+  // Page Range Mode
+  const [pageChapterNo, setPageChapterNo] = useState(1);
+  const [pageFrom, setPageFrom] = useState('');
+  const [pageTo, setPageTo] = useState('');
+
+  // Custom Teacher Command Mode
+  const [customCommand, setCustomCommand] = useState('');
+
+  // Universal Syllabus Display Label on Test Paper Header
+  const [customSyllabusLabel, setCustomSyllabusLabel] = useState('');
+
   const [targetMarks, setTargetMarks] = useState(25);
   const [mcqCount, setMcqCount] = useState(5);
   const [shortCount, setShortCount] = useState(8);
@@ -28,7 +48,7 @@ export default function TestGeneratorWizard({
   const [manualTypeFilter, setManualTypeFilter] = useState('all'); // 'all' | 'mcq' | 'short_question' | 'long_question'
   const [manualSearchQuery, setManualSearchQuery] = useState('');
 
-  // Filter available chapters from the question bank and standard curriculum
+  // Dynamically extract available chapters from the database question bank
   const availableChapters = useMemo(() => {
     const list = [];
     const seen = new Set();
@@ -39,20 +59,22 @@ export default function TestGeneratorWizard({
           seen.add(q.chapter_no);
           list.push({
             no: q.chapter_no,
-            title_en: q.chapter_name_en,
-            title_ur: q.chapter_name_ur
+            title_en: q.chapter_name_en || `Unit ${q.chapter_no}`,
+            title_ur: q.chapter_name_ur || `یونٹ ${q.chapter_no}`
           });
         }
       });
 
-    // Merge standard curriculum chapters if defined for this class & subject
-    const curriculumList = CURRICULUM_CHAPTERS_MAP?.[selectedClass]?.[selectedSubject] || [];
-    curriculumList.forEach(c => {
-      if (!seen.has(c.no)) {
-        seen.add(c.no);
-        list.push(c);
+    // If database currently has no questions for this subject, provide dynamic units 1 to 10
+    if (list.length === 0) {
+      for (let i = 1; i <= 10; i++) {
+        list.push({
+          no: i,
+          title_en: `Unit ${i}`,
+          title_ur: `یونٹ ${i}`
+        });
       }
-    });
+    }
 
     return list.sort((a, b) => a.no - b.no);
   }, [questionBank, selectedClass, selectedSubject]);
@@ -65,9 +87,42 @@ export default function TestGeneratorWizard({
         setSelectedChapters(valid);
       } else {
         setSelectedChapters([availableChapters[0].no]);
+        setHalfChapterNo(availableChapters[0].no);
+        setPageChapterNo(availableChapters[0].no);
       }
     }
   }, [availableChapters]);
+
+  // Auto-generate syllabus label when parameters change
+  React.useEffect(() => {
+    if (availableChapters.length === 0) return;
+
+    if (rangeMode === 'half_chapter') {
+      const ch = availableChapters.find(c => c.no === Number(halfChapterNo)) || availableChapters[0];
+      const chTitle = ch?.title_en || `Unit ${halfChapterNo}`;
+      const halfName = halfType === 'first_half' ? `1st Half (Ex ${ch?.no}.1 to ${ch?.no}.3)` : `2nd Half (Ex ${ch?.no}.4 to Review)`;
+      setCustomSyllabusLabel(`Unit ${ch?.no}: ${chTitle} - ${halfName}`);
+    } else if (rangeMode === 'page_range') {
+      const ch = availableChapters.find(c => c.no === Number(pageChapterNo)) || availableChapters[0];
+      const chTitle = ch?.title_en || `Unit ${pageChapterNo}`;
+      const pStr = (pageFrom || pageTo) ? `Pages ${pageFrom || '1'} to ${pageTo || 'End'}` : 'Custom Pages';
+      setCustomSyllabusLabel(`Unit ${ch?.no}: ${chTitle} (${pStr})`);
+    } else if (rangeMode === 'custom_command') {
+      if (customCommand.trim()) {
+        setCustomSyllabusLabel(customCommand.trim());
+      }
+    } else {
+      // full_chapter
+      if (selectedChapters.length === 1) {
+        const ch = availableChapters.find(c => c.no === selectedChapters[0]);
+        setCustomSyllabusLabel(ch ? `Unit ${ch.no}: ${ch.title_en}` : `Unit ${selectedChapters[0]}`);
+      } else if (selectedChapters.length === availableChapters.length && availableChapters.length > 0) {
+        setCustomSyllabusLabel(`Full Book (Units 1 - ${availableChapters.length})`);
+      } else if (selectedChapters.length > 1) {
+        setCustomSyllabusLabel(`Units ${selectedChapters.join(', ')}`);
+      }
+    }
+  }, [rangeMode, halfChapterNo, halfType, pageChapterNo, pageFrom, pageTo, customCommand, selectedChapters, availableChapters]);
 
   // Handle Preset Marks Clicks (Exact Punjab Board Scheme)
   const handlePresetMarks = (marks) => {
@@ -129,14 +184,56 @@ export default function TestGeneratorWizard({
     setSelectedChapters(half.map(c => c.no));
   };
 
-  // Pool for manual picker
-  const manualQuestionPool = useMemo(() => {
-    return questionBank.filter(
-      q => q.class === selectedClass && 
-           q.subject === selectedSubject && 
-           selectedChapters.includes(q.chapter_no)
+  // Filter question pool strictly based on teacher's chosen syllabus range
+  const filteredQuestionPool = useMemo(() => {
+    let pool = questionBank.filter(
+      q => q.class === selectedClass && q.subject === selectedSubject
     );
-  }, [questionBank, selectedClass, selectedSubject, selectedChapters]);
+
+    if (rangeMode === 'half_chapter') {
+      const targetCh = Number(halfChapterNo) || (availableChapters[0]?.no || 1);
+      const chQuestions = pool.filter(q => q.chapter_no === targetCh);
+      if (chQuestions.length === 0) return pool.filter(q => selectedChapters.includes(q.chapter_no));
+
+      if (halfType === 'first_half') {
+        const firstMatches = chQuestions.filter(q => {
+          const ex = (q.exercise || '').toLowerCase();
+          return ex.includes('.1') || ex.includes('.2') || ex.includes('.3') || ex.includes('definitions') || ex.includes('تعریفات');
+        });
+        return firstMatches.length >= 3 ? firstMatches : chQuestions.slice(0, Math.ceil(chQuestions.length / 2));
+      } else {
+        const secondMatches = chQuestions.filter(q => {
+          const ex = (q.exercise || '').toLowerCase();
+          return ex.includes('.4') || ex.includes('.5') || ex.includes('.6') || ex.includes('.7') || ex.includes('review') || ex.includes('اعادہ');
+        });
+        return secondMatches.length >= 3 ? secondMatches : chQuestions.slice(Math.ceil(chQuestions.length / 2));
+      }
+    }
+
+    if (rangeMode === 'page_range') {
+      const targetCh = Number(pageChapterNo) || (availableChapters[0]?.no || 1);
+      const chQuestions = pool.filter(q => q.chapter_no === targetCh);
+      return chQuestions.length > 0 ? chQuestions : pool;
+    }
+
+    if (rangeMode === 'custom_command' && customCommand.trim()) {
+      const qLower = customCommand.toLowerCase();
+      const words = qLower.split(/[\s,+/]+/).filter(w => w.length > 1);
+      const matched = pool.filter(q => {
+        const text = `${q.exercise || ''} ${q.question_en || ''} ${q.question_ur || ''} ${q.chapter_name_en || ''}`.toLowerCase();
+        return words.some(w => text.includes(w));
+      });
+      if (matched.length > 0) return matched;
+      return pool.filter(q => selectedChapters.includes(q.chapter_no));
+    }
+
+    // Default 'full_chapter'
+    const chFiltered = pool.filter(q => selectedChapters.includes(q.chapter_no));
+    return chFiltered.length > 0 ? chFiltered : pool;
+  }, [questionBank, selectedClass, selectedSubject, rangeMode, halfChapterNo, halfType, pageChapterNo, customCommand, selectedChapters, availableChapters]);
+
+  // Pool for manual picker
+  const manualQuestionPool = filteredQuestionPool;
 
   const filteredManualPool = useMemo(() => {
     return manualQuestionPool.filter(q => {
@@ -188,11 +285,25 @@ export default function TestGeneratorWizard({
       });
     } catch (e) {}
 
+    const activeChapters = rangeMode === 'half_chapter' 
+      ? [Number(halfChapterNo)] 
+      : rangeMode === 'page_range' 
+      ? [Number(pageChapterNo)] 
+      : selectedChapters;
+
     if (generationMode === 'auto') {
       onGenerateTest({
         selectedClass,
         selectedSubject,
-        selectedChapters,
+        selectedChapters: activeChapters,
+        rangeMode,
+        halfType,
+        halfChapterNo,
+        pageFrom,
+        pageTo,
+        customCommand,
+        syllabus: customSyllabusLabel,
+        filteredPool: filteredQuestionPool,
         mcqCount: Number(mcqCount),
         shortCount: Number(shortCount),
         longCount: Number(longCount),
@@ -211,8 +322,9 @@ export default function TestGeneratorWizard({
         onGenerateManualTest({
           selectedClass,
           selectedSubject,
-          selectedChapters,
+          selectedChapters: activeChapters,
           selectedQuestions: manualStats.selectedQuestions,
+          syllabus: customSyllabusLabel,
           timeAllowed,
           testTitle,
           campus
@@ -298,64 +410,358 @@ export default function TestGeneratorWizard({
         </select>
       </div>
 
-      {/* Chapter Selection */}
-      <div className="form-group">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-          <label className="form-label" style={{ marginBottom: 0 }}>3. Select Chapters / Units</label>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              type="button"
-              onClick={selectAllChapters}
-              style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e3a8a', fontSize: '0.68rem', padding: '2px 5px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}
-              title="Select all units"
-            >
-              All
-            </button>
-            <button
-              type="button"
-              onClick={selectFirstHalf}
-              style={{ background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e', fontSize: '0.68rem', padding: '2px 5px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}
-              title="First Half Book (Mid-term / Term 1)"
-            >
-              1st Half
-            </button>
-            <button
-              type="button"
-              onClick={selectSecondHalf}
-              style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', fontSize: '0.68rem', padding: '2px 5px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}
-              title="Second Half Book (Final Term / Term 2)"
-            >
-              2nd Half
-            </button>
-          </div>
+      {/* 3. Syllabus & Chapter Scope Selection (Full Chapter, Half Chapter, Page Range, Teacher Command) */}
+      <div className="form-group" style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <label className="form-label" style={{ marginBottom: 0, fontWeight: 800, color: '#0f2744', fontSize: '0.88rem' }}>
+            3. Syllabus Scope (نصاب و دائرہ کار کا انتخاب)
+          </label>
+          <span style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+            {filteredQuestionPool.length} Qs Available
+          </span>
         </div>
 
-        <div className="chapters-box">
-          {availableChapters.length === 0 ? (
-            <div style={{ padding: '8px', fontSize: '0.8rem', color: '#64748b' }}>
-              No chapters loaded for this subject. Use "Upload Material" to add questions.
+        {/* Range Mode Switcher Tabs */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginBottom: '10px', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+          <button
+            type="button"
+            onClick={() => setRangeMode('half_chapter')}
+            style={{
+              padding: '5px 4px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              background: rangeMode === 'half_chapter' ? '#1e3a8a' : 'transparent',
+              color: rangeMode === 'half_chapter' ? '#ffffff' : '#475569',
+              textAlign: 'center'
+            }}
+            title="Half Chapter (1st Half or 2nd Half)"
+          >
+            🌓 Half Ch
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRangeMode('page_range')}
+            style={{
+              padding: '5px 4px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              background: rangeMode === 'page_range' ? '#1e3a8a' : 'transparent',
+              color: rangeMode === 'page_range' ? '#ffffff' : '#475569',
+              textAlign: 'center'
+            }}
+            title="Page Range (From Page to Page)"
+          >
+            📖 Page Range
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRangeMode('full_chapter')}
+            style={{
+              padding: '5px 4px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              background: rangeMode === 'full_chapter' ? '#1e3a8a' : 'transparent',
+              color: rangeMode === 'full_chapter' ? '#ffffff' : '#475569',
+              textAlign: 'center'
+            }}
+            title="Complete Chapter or Multiple Chapters"
+          >
+            📑 Full Ch
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRangeMode('custom_command')}
+            style={{
+              padding: '5px 4px',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              background: rangeMode === 'custom_command' ? '#1e3a8a' : 'transparent',
+              color: rangeMode === 'custom_command' ? '#ffffff' : '#475569',
+              textAlign: 'center'
+            }}
+            title="Custom Teacher Command / Prompt"
+          >
+            ✍️ Custom
+          </button>
+        </div>
+
+        {/* SUBPANEL 1: HALF CHAPTER MODE */}
+        {rangeMode === 'half_chapter' && (
+          <div style={{ background: '#ffffff', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+            <div style={{ marginBottom: '8px' }}>
+              <label style={{ fontSize: '0.74rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '3px' }}>
+                Select Chapter (سبق منتخب کریں):
+              </label>
+              <select
+                className="form-select"
+                style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                value={halfChapterNo}
+                onChange={(e) => setHalfChapterNo(Number(e.target.value))}
+              >
+                {availableChapters.map(ch => (
+                  <option key={ch.no} value={ch.no}>Unit {ch.no}: {ch.title_en}</option>
+                ))}
+              </select>
             </div>
-          ) : (
-            availableChapters.map(ch => {
-              const isChecked = selectedChapters.includes(ch.no);
-              return (
-                <div
-                  key={ch.no}
-                  className="chapter-item"
-                  onClick={() => toggleChapter(ch.no)}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {}}
-                  />
-                  <span>
-                    <strong>Unit {ch.no}:</strong> {ch.title_en}
-                  </span>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setHalfType('first_half')}
+                style={{
+                  padding: '8px',
+                  borderRadius: '6px',
+                  border: halfType === 'first_half' ? '2px solid #1e3a8a' : '1px solid #cbd5e1',
+                  background: halfType === 'first_half' ? '#eff6ff' : '#f8fafc',
+                  color: halfType === 'first_half' ? '#1e3a8a' : '#475569',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>🔵 1st Half (پہلا نصف)</div>
+                <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>
+                  Ex {halfChapterNo}.1 to {halfChapterNo}.3 + Definitions
                 </div>
-              );
-            })
-          )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHalfType('second_half')}
+                style={{
+                  padding: '8px',
+                  borderRadius: '6px',
+                  border: halfType === 'second_half' ? '2px solid #1e3a8a' : '1px solid #cbd5e1',
+                  background: halfType === 'second_half' ? '#eff6ff' : '#f8fafc',
+                  color: halfType === 'second_half' ? '#1e3a8a' : '#475569',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>🟣 2nd Half (دوسرا نصف)</div>
+                <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '2px' }}>
+                  Ex {halfChapterNo}.4 onwards + Review Exercise
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* SUBPANEL 2: PAGE RANGE MODE */}
+        {rangeMode === 'page_range' && (
+          <div style={{ background: '#ffffff', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+            <div style={{ marginBottom: '8px' }}>
+              <label style={{ fontSize: '0.74rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '3px' }}>
+                Select Book Unit (سبق منتخب کریں):
+              </label>
+              <select
+                className="form-select"
+                style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                value={pageChapterNo}
+                onChange={(e) => setPageChapterNo(Number(e.target.value))}
+              >
+                {availableChapters.map(ch => (
+                  <option key={ch.no} value={ch.no}>Unit {ch.no}: {ch.title_en}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569' }}>From Page (شروع):</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{ padding: '4px 8px', fontSize: '0.82rem', marginTop: '2px' }}
+                  placeholder="e.g. 15"
+                  value={pageFrom}
+                  onChange={(e) => setPageFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569' }}>To Page (آخری صفحہ):</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{ padding: '4px 8px', fontSize: '0.82rem', marginTop: '2px' }}
+                  placeholder="e.g. 32"
+                  value={pageTo}
+                  onChange={(e) => setPageTo(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Quick Page Range presets */}
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.68rem', color: '#64748b', alignSelf: 'center' }}>Presets:</span>
+              {[
+                { from: '1', to: '15' },
+                { from: '16', to: '30' },
+                { from: '31', to: '45' }
+              ].map(p => (
+                <button
+                  key={p.from}
+                  type="button"
+                  onClick={() => { setPageFrom(p.from); setPageTo(p.to); }}
+                  style={{ fontSize: '0.66rem', padding: '2px 6px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  Pg {p.from}-{p.to}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* SUBPANEL 3: FULL CHAPTER(S) MODE */}
+        {rangeMode === 'full_chapter' && (
+          <div style={{ background: '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#334155' }}>Pick Chapters (ایک یا زیادہ):</span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  type="button"
+                  onClick={selectAllChapters}
+                  style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e3a8a', fontSize: '0.68rem', padding: '2px 5px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}
+                  title="Select all units"
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={selectFirstHalf}
+                  style={{ background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e', fontSize: '0.68rem', padding: '2px 5px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}
+                  title="First Half Book (Mid-term / Term 1)"
+                >
+                  1st Half
+                </button>
+                <button
+                  type="button"
+                  onClick={selectSecondHalf}
+                  style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', fontSize: '0.68rem', padding: '2px 5px', borderRadius: '4px', cursor: 'pointer', fontWeight: 700 }}
+                  title="Second Half Book (Final Term / Term 2)"
+                >
+                  2nd Half
+                </button>
+              </div>
+            </div>
+
+            <div className="chapters-box" style={{ maxHeight: '135px' }}>
+              {availableChapters.length === 0 ? (
+                <div style={{ padding: '8px', fontSize: '0.8rem', color: '#64748b' }}>
+                  No chapters loaded for this subject.
+                </div>
+              ) : (
+                availableChapters.map(ch => {
+                  const isChecked = selectedChapters.includes(ch.no);
+                  return (
+                    <div
+                      key={ch.no}
+                      className="chapter-item"
+                      onClick={() => toggleChapter(ch.no)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {}}
+                      />
+                      <span>
+                        <strong>Unit {ch.no}:</strong> {ch.title_en}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SUBPANEL 4: CUSTOM TEACHER COMMAND / PROMPT MODE */}
+        {rangeMode === 'custom_command' && (
+          <div style={{ background: '#ffffff', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+            <label style={{ fontSize: '0.74rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '3px' }}>
+              Teacher's Command (استاد اپنی مرضی سے رینج یا مشقیں لکھیں):
+            </label>
+            <textarea
+              className="form-input"
+              rows={2}
+              style={{ width: '100%', fontSize: '0.8rem', padding: '6px 8px', resize: 'vertical' }}
+              placeholder="مثال: Unit 1 Ex 1.2 and Ex 1.4 only, Definitions and MCQs, یا Cramer's Rule..."
+              value={customCommand}
+              onChange={(e) => setCustomCommand(e.target.value)}
+            />
+
+            {/* Quick Command Chips */}
+            <div style={{ marginTop: '6px' }}>
+              <div style={{ fontSize: '0.68rem', color: '#64748b', marginBottom: '3px' }}>Quick Presets / فوری منتخب کریں:</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                {[
+                  "Definitions Only (صرف تعریفات)",
+                  "Review Exercise MCQs",
+                  "Ex 1.1 to 1.3",
+                  "Ex 1.4 to 1.6",
+                  "Cramer's Rule & Inversion",
+                  "Board Theorems (اہم مسئلے)"
+                ].map(chip => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => setCustomCommand(chip)}
+                    style={{
+                      fontSize: '0.66rem',
+                      padding: '2px 6px',
+                      background: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      color: '#1e293b'
+                    }}
+                  >
+                    + {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* UNIVERSAL TEST SYLLABUS EDITABLE PREVIEW (Printed on Student Paper) */}
+        <div style={{ marginTop: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '8px 10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#1e3a8a', textTransform: 'uppercase' }}>
+              📝 Paper Syllabus (پیپر پر پرنٹ ہونے والا نصاب):
+            </span>
+            <span style={{ fontSize: '0.66rem', color: '#0369a1', fontWeight: 600 }}>Editable / تبدیل کریں</span>
+          </div>
+          <input
+            type="text"
+            className="form-input"
+            value={customSyllabusLabel}
+            onChange={(e) => setCustomSyllabusLabel(e.target.value)}
+            placeholder="e.g. Unit 1 (1st Half: Ex 1.1 to 1.3)"
+            style={{ fontSize: '0.82rem', fontWeight: 700, padding: '4px 8px', color: '#0f172a', background: '#ffffff', width: '100%' }}
+          />
         </div>
       </div>
 
