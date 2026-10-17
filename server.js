@@ -5,14 +5,14 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
+const systemPort = process.env.PORT;
 dotenv.config();
+const PORT = systemPort || process.env.PORT || 3000;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -399,8 +399,13 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // Flexible listening for Hostinger (supports both Passenger socket and TCP port)
-const serverPort = process.env.PORT || 3000;
-app.listen(serverPort, () => {
-  console.log(`[Hostinger Web App] The Century Academy Test Maker Server running on ${serverPort}`);
-});
+if (typeof PhusionPassenger !== 'undefined') {
+  app.listen('passenger', () => {
+    console.log('[Hostinger Passenger] The Century Academy Test Maker Server running on passenger socket');
+  });
+} else {
+  app.listen(PORT, () => {
+    console.log(`[Hostinger Web App] The Century Academy Test Maker Server running on ${PORT}`);
+  });
+}
 
