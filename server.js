@@ -3,8 +3,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import mysql from 'mysql2/promise';
-import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -18,6 +16,15 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Resilient MySQL2 dynamic import: prevents 503 crashes on Hostinger if node_modules are building
+let mysql = null;
+try {
+  const mysqlModule = await import('mysql2/promise');
+  mysql = mysqlModule.default || mysqlModule;
+} catch (err) {
+  console.warn(`[Database] Notice: mysql2 package not loaded (${err.message}). API will run in resilient fallback mode.`);
+}
 
 // Database connection configuration
 const dbConfig = {
@@ -36,6 +43,10 @@ let pool = null;
 let dbConnected = false;
 
 async function initDatabase() {
+  if (!mysql) {
+    dbConnected = false;
+    return;
+  }
   try {
     pool = mysql.createPool(dbConfig);
     const connection = await pool.getConnection();
@@ -72,23 +83,21 @@ async function initDatabase() {
   }
 }
 
-initDatabase();
+// Initialize database asynchronously without blocking web server startup
+initDatabase().catch(err => {
+  console.warn('[Database] Async init notice:', err.message);
+});
 
-// Ensure production dist exists before serving
+// Serve compiled static assets: dist first, then public
 const distPath = path.join(__dirname, 'dist');
-if (!fs.existsSync(distPath) || !fs.existsSync(path.join(distPath, 'index.html'))) {
-  try {
-    console.log('[Server] Production dist not found. Triggering automated build: npm run build...');
-    execSync('npm run build', { stdio: 'pipe' });
-    console.log('[Server] ✅ Automated build completed successfully!');
-  } catch (err) {
-    console.warn('[Server] Automated build notice:', err.message);
-  }
-}
+const publicPath = path.join(__dirname, 'public');
 
-// Serve static assets: dist first (compiled app), then public (images/branding)
-app.use(express.static(distPath));
-app.use(express.static(path.join(__dirname, 'public')));
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+if (fs.existsSync(publicPath)) {
+  app.use(express.static(publicPath));
+}
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
@@ -362,6 +371,14 @@ app.use((req, res) => {
       </html>
     `);
   }
+});
+
+// Global process safety handlers to prevent Hostinger 503 crash on unhandled errors
+process.on('uncaughtException', (err) => {
+  console.error('[Hostinger Process] uncaughtException caught:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Hostinger Process] unhandledRejection caught:', reason);
 });
 
 app.listen(PORT, () => {

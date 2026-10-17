@@ -1,6 +1,4 @@
 node_modules/
-dist/
-dist.zip
 hostinger-web-app.zip
 .DS_Store
 Thumbs.db
